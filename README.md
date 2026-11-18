@@ -5,7 +5,7 @@
 One search box for 3D-printing models on **Thingiverse**, **Printables** and **MakerWorld**.
 A small Rust application with a local web interface and a command-line mode: search the three sites at once, filter and sort the results, like a model or add it to a collection, and keep your recent searches. This was coded by Claude to ensure complete transparency; I could never have done this on my own—it would have taken me too long, and I don't have enough knowledge.
 
-![Alt text](printsearch.png)
+![PrintSearch screenshot 1](printsearch.png)
 
 > **Not affiliated with Thingiverse, Printables or MakerWorld.** Names and logos belong to their respective owners and are used only to identify each source. See [Limitations & legal notes](#limitations--legal-notes).
 
@@ -36,8 +36,8 @@ No OpenSSL needed (the project uses `rustls`).
 ### From source (Linux, macOS, Windows)
 
 ```bash
-git clone https://github.com/<your-user>/printsearch.git
-cd printsearch
+git clone https://github.com/Print-lab/PrintSearch.git
+cd PrintSearch
 cargo build --release
 ```
 
@@ -51,7 +51,7 @@ cargo deb
 sudo apt install ./target/debian/printsearch_*_amd64.deb
 ```
 
-Chromium is *recommended* by the package, so `apt` will offer to install it. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` and `license` in `Cargo.toml`.
+Chromium is *recommended* by the package, so `apt` will offer to install it. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
 
 ### Windows executable
 
@@ -61,7 +61,7 @@ Build on Windows with `cargo build --release`, then copy `target\release\printse
 
 ### Web interface
 
-![Alt text](printsearch-2.png)
+![PrintSearch screenshot 2](printsearch-2.png)
 
 Run `printsearch` with no argument: it starts the local server and opens your browser on **http://localhost:8787**.
 
@@ -191,8 +191,8 @@ Adding a site means adding a file implementing the `Provider` trait in `src/prov
 
 ## Contributing
 
-Issues and pull requests are welcome, especially for verifying or fixing the experimental endpoints, adding sites, and translations (the `I18N` object in `web/index.html`).
+[Issues](https://github.com/Print-lab/PrintSearch/issues) and pull requests are welcome, especially for verifying or fixing the experimental endpoints, adding sites, and translations (the `I18N` object in `web/index.html`).
 
 ## License
 
-See the `LICENSE` file.
+PrintSearch is free software, released under the **GNU General Public License v3.0** (GPL-3.0). See the [LICENSE](LICENSE) file.
