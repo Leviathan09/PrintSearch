@@ -5,6 +5,8 @@
 One search box for 3D-printing models on **Thingiverse**, **Printables** and **MakerWorld**.
 A small Rust application with a local web interface and a command-line mode: search the three sites at once, filter and sort the results, like a model or add it to a collection, and keep your recent searches. This was coded by Claude to ensure complete transparency; I could never have done this on my own—it would have taken me too long, and I don't have enough knowledge.
 
+![Alt text](printsearch.png)
+
 > **Not affiliated with Thingiverse, Printables or MakerWorld.** Names and logos belong to their respective owners and are used only to identify each source. See [Limitations & legal notes](#limitations--legal-notes).
 
 <!-- Add a screenshot here: ![PrintSearch](docs/screenshot.png) -->
@@ -58,6 +60,8 @@ Build on Windows with `cargo build --release`, then copy `target\release\printse
 ## Usage
 
 ### Web interface
+
+![Alt text](printsearch-2.png)
 
 Run `printsearch` with no argument: it starts the local server and opens your browser on **http://localhost:8787**.
 
