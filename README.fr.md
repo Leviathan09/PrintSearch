@@ -5,6 +5,8 @@
 Une seule barre de recherche pour les modèles d'impression 3D de **Thingiverse**, **Printables** et **MakerWorld**.
 Une petite application Rust avec une interface web locale et un mode ligne de commande : recherchez sur les trois sites en même temps, filtrez et triez les résultats, likez un modèle ou ajoutez-le à une collection, et retrouvez vos recherches récentes. Ce code a été écrit par Claude afin de garantir une transparence totale ; je n'aurais jamais pu le faire tout seul : cela m'aurait pris trop de temps et je n'ai pas les connaissances nécessaires.
 
+![Alt text](printsearch.png)
+
 > **Non affilié à Thingiverse, Printables ni MakerWorld.** Les noms et logos appartiennent à leurs propriétaires et ne servent qu'à identifier chaque source. Voir [Limites et mentions légales](#limites-et-mentions-légales).
 
 <!-- Ajoutez une capture d'écran ici : ![PrintSearch](docs/screenshot.png) -->
@@ -58,6 +60,8 @@ Compilez sous Windows avec `cargo build --release`, puis copiez `target\release\
 ## Utilisation
 
 ### Interface web
+
+![Alt text](printsearch-2.png)
 
 Lancez `printsearch` sans argument : il démarre le serveur local et ouvre votre navigateur sur **http://localhost:8787**.
 
