@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrintSearch</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#6a7480;--line:#e2e6ea;--accent:#2f6fed;--ok:#1f9d55;--bad:#d64545;--heart:#e0245e;
+--tv:#248bcc;--pr:#f96831;--mw:#00ae42;--ease:cubic-bezier(.2,.8,.2,1)}
+@media(prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1d2125;--text:#e8ebee;--muted:#9099a3;--line:#2b3138;--accent:#6b9bff}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--text)}
+
+/* ---------- Zone de recherche : centrée au départ, remonte après la 1re recherche ---------- */
+.stage{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 20px;border-bottom:1px solid var(--line);
+  min-height:0;display:flex;flex-direction:column;justify-content:center;
+  transition:min-height .75s var(--ease),padding .75s var(--ease),border-color .5s}
+body.hero .stage{min-height:100vh;padding:24px 20px;border-bottom-color:transparent}
+.stage-inner{width:100%;max-width:1200px;margin:0 auto;transition:max-width .75s var(--ease)}
+body.hero .stage-inner{max-width:700px}
+.brand{margin:0 0 10px;font-size:18px;cursor:pointer;user-select:none;transition:font-size .75s var(--ease),margin .75s var(--ease)}
+body.hero .brand{font-size:46px;text-align:center;margin-bottom:6px;animation:rise .8s var(--ease) backwards}
+.tagline{color:var(--muted);text-align:center;font-size:15px;max-height:0;opacity:0;overflow:hidden;margin:0;
+  transition:max-height .5s var(--ease),opacity .4s,margin .5s}
+body.hero .tagline{max-height:40px;opacity:1;margin:0 0 22px;animation:rise .8s .1s var(--ease) backwards}
+form{display:flex;gap:8px;align-items:center}
+body.hero form{animation:rise .8s .2s var(--ease) backwards}
+input[type=search]{flex:1;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--text);font-size:15px;outline:none;transition:padding .75s var(--ease),font-size .75s var(--ease),box-shadow .25s,border-color .25s}
+body.hero input[type=search]{padding:16px 20px;font-size:18px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+input[type=search]:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+button{padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);cursor:pointer;
+  font-size:14px;transition:transform .15s,box-shadow .2s,background-color .2s,border-color .2s,color .2s}
+button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+button:active:not(:disabled){transform:scale(.96)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;padding:10px 18px}
+body.hero button.primary{padding:16px 24px;font-size:16px;border-radius:16px}
+button:disabled{opacity:.6;cursor:default}
+button.loading::after{content:'';display:inline-block;width:12px;height:12px;margin-left:8px;vertical-align:-2px;
+  border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite}
+.filters{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;align-items:center;color:var(--muted);font-size:13px}
+body.hero .filters{justify-content:center}
+.filters.extra{animation:fade .6s .1s backwards}
+select,input[type=number]{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;
+  transition:border-color .2s,box-shadow .2s}
+select:focus,input[type=number]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.site-chip{display:inline-flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--bad);transition:background-color .4s}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.link{border:none;background:none;color:var(--accent);padding:0;font-size:13px;cursor:pointer;text-decoration:underline;box-shadow:none!important;transform:none!important}
+
+/* ---------- Résultats ---------- */
+main{padding:20px;max-width:1240px;margin:0 auto}
+body.hero main{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
+  animation:rise .55s var(--ease) backwards;animation-delay:calc(var(--i,0) * 45ms);
+  transition:transform .25s var(--ease),box-shadow .25s,border-color .25s}
+.card:hover{transform:translateY(-5px);box-shadow:0 14px 30px rgba(0,0,0,.14);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.thumbwrap{position:relative;aspect-ratio:4/3;background:var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:34px}
+.thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s,transform .6s var(--ease)}
+.thumb.loaded{opacity:1}
+.card:hover .thumb{transform:scale(1.07)}
+.body{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.badge{align-self:flex-start;display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:3px 11px 3px 4px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+.sico{width:22px;height:22px;object-fit:contain;border-radius:6px;vertical-align:-6px;margin-right:6px;flex:none}
+.sico.s-makerworld{background:#14171a;padding:3px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.4)}
+.sites{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.site-opt{display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:var(--text)}
+.site-opt .sico{margin:0 2px 0 0;vertical-align:0}
+.badge .sico{margin-right:7px;vertical-align:0}
+.title{font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.meta{color:var(--muted);font-size:13px}
+.price{font-size:12px;font-weight:600}
+.actions{display:flex;gap:6px;margin-top:auto;padding-top:8px;flex-wrap:wrap}
+.actions button,.actions a{font-size:13px;padding:5px 10px}
+.actions a{border:1px solid var(--line);border-radius:10px;color:var(--text);text-decoration:none;transition:background-color .2s,transform .15s}
+.actions a:hover{background:var(--line)}
+.actions a:active{transform:scale(.96)}
+.heart{display:inline-block}
+button.liked{color:var(--heart);border-color:var(--heart)}
+button.liked .heart{animation:pop .45s var(--ease)}
+button.shake{animation:shake .4s}
+
+.skel{aspect-ratio:3/4.1;border-radius:14px;border:1px solid var(--line);
+  background:linear-gradient(90deg,var(--card) 25%,var(--line) 50%,var(--card) 75%);background-size:200% 100%;
+  animation:shimmer 1.3s linear infinite,fade .4s backwards}
+
+.msg{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;background:var(--card);border:1px solid var(--line);animation:rise .4s var(--ease) backwards}
+.msg.err{border-color:var(--bad);color:var(--bad)}
+#status{color:var(--muted);margin-bottom:12px;min-height:1.4em;transition:opacity .3s}
+#moreWrap{text-align:center;margin:22px 0 10px}
+#toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);background:var(--text);color:var(--bg);padding:10px 16px;
+  border-radius:10px;opacity:0;transition:opacity .25s,transform .35s var(--ease);pointer-events:none;max-width:90vw;z-index:20}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+.gear{position:fixed;top:14px;right:16px;z-index:30;padding:6px 11px;font-size:18px;line-height:1;border-radius:12px}
+.gear:hover:not(:disabled){transform:rotate(60deg)}
+body.view-settings .gear,body.view-settings .stage,body.view-settings main{display:none}
+.settings{display:none;padding:28px 20px}
+body.view-settings .settings{display:block;animation:rise .5s var(--ease)}
+.settings-inner{max-width:760px;margin:0 auto}
+.settings h2{margin:18px 0 6px;font-size:26px}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0;animation:rise .5s var(--ease) backwards;animation-delay:calc(var(--i,0) * 70ms)}
+.shead{display:flex;align-items:center;gap:8px;font-size:16px}
+.shead .sico{margin:0}
+.state{margin-left:auto;font-size:12px;padding:2px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.state.on{color:var(--ok);border-color:var(--ok)}
+.hint{color:var(--muted);font-size:13px;margin:8px 0 12px}
+.srow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.srow input[type=password]{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.srow input[type=password]:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+body.view-settings .settings button.primary{padding:8px 14px;font-size:14px;border-radius:10px}
+.searchbox{position:relative;flex:1;min-width:0}
+.searchbox input[type=search]{width:100%}
+.hist{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 16px 36px rgba(0,0,0,.2);overflow:hidden;animation:fade .15s;text-align:left;font-size:14px}
+.hist[hidden]{display:none}
+.hhead{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.hitem{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background-color .15s}
+.hitem:hover,.hitem.active{background:var(--bg)}
+.htext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hx{padding:2px 7px;border:none;background:none;color:var(--muted);font-size:12px}
+.hx:hover:not(:disabled){color:var(--bad);transform:none;box-shadow:none}
+.settings h3{margin:28px 0 0;font-size:18px}
+@keyframes rise{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes shimmer{to{background-position:-200% 0}}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.5)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body class="hero">
+<button id="gear" class="gear" type="button" data-i18n-title="settings">⚙</button>
+<header class="stage">
+  <div class="stage-inner">
+    <h1 class="brand" id="brand">🔎 PrintSearch</h1>
+    <p class="tagline" data-i18n="tagline"></p>
+    <form id="f">
+      <div class="searchbox">
+        <input type="search" id="q" data-i18n-placeholder="placeholder" autofocus autocomplete="off">
+        <div id="hist" class="hist" hidden></div>
+      </div>
+      <button class="primary" id="go" data-i18n="search"></button>
+    </form>
+    <div class="filters extra">
+      <div class="sites" id="filters"></div>
+      <label><span data-i18n="price"></span> <select id="price"><option value="" data-i18n="all"></option><option value="free" data-i18n="free"></option><option value="paid" data-i18n="paid"></option></select></label>
+      <label><span data-i18n="sort"></span> <select id="sort"><option value="" data-i18n="relevance"></option><option value="likes" data-i18n="likes"></option><option value="downloads" data-i18n="downloads"></option></select></label>
+      <label><span data-i18n="minLikes"></span> <input type="number" id="minlikes" min="0" placeholder="0" style="width:80px"></label>
+      <label><span data-i18n="minDl"></span> <input type="number" id="mindl" min="0" placeholder="0" style="width:90px"></label>
+      <label><span data-i18n="perSite"></span> <select id="limit"><option>6</option><option selected>12</option><option>24</option><option>50</option><option>100</option></select></label>
+    </div>
+  </div>
+</header>
+<main>
+  <div id="errors"></div>
+  <div id="status"></div>
+  <div class="grid" id="grid"></div>
+  <div id="moreWrap"><button id="more" style="display:none" data-i18n="loadMore"></button></div>
+</main>
+<section id="settings" class="settings">
+  <div class="settings-inner">
+    <button id="back" type="button" data-i18n="back"></button>
+    <h2 data-i18n="settings"></h2>
+    <p class="meta" data-i18n="settingsIntro"></p>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="general"></strong></div>
+      <div class="srow" style="margin-top:12px">
+        <label><span data-i18n="language"></span> <select id="langSel"><option value="en">English</option><option value="fr">Français</option></select></label>
+      </div>
+      <div class="srow" style="margin-top:14px">
+        <label class="site-opt"><input type="checkbox" id="histOn"> <span data-i18n="historyLabel"></span></label>
+        <button type="button" id="clearHist" data-i18n="clearHistory"></button>
+      </div>
+      <p class="hint" style="margin-bottom:0" data-i18n="historyHint"></p>
+    </div>
+    <h3 data-i18n="connections"></h3>
+    <div id="siteSettings"></div>
+  </div>
+</section>
+<div id="toast"></div>
+<script>
+const SITES = {thingiverse:'Thingiverse', printables:'Printables', makerworld:'MakerWorld'};
+const $ = s => document.querySelector(s);
+let connected = {}, oauthOk = false;
+let page = 1, lastQ = '', total = 0, seq = 0, ctrl = null, timer = null, toastTimer = null;
+
+function toast(t){
+  const e=$('#toast'); e.textContent=t; e.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>e.classList.remove('show'),2500);
+}
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const txt = await r.text();
+  if(!r.ok) throw new Error(txt || r.statusText);
+  return txt ? JSON.parse(txt) : {};
+}
+const post = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+
+// Construction DOM : append(string) = texte, jamais du HTML (les titres viennent de sites tiers).
+function el(tag, props={}, ...kids){
+  const e = document.createElement(tag);
+  for(const [k,v] of Object.entries(props)){
+    if(k==='class') e.className=v; else if(k.startsWith('on')) e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);
+  }
+  kids.flat().forEach(k => e.append(k));
+  return e;
+}
+
+
+// ---------- Stockage local (navigateur) : langue et historique ----------
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const I18N = {
+  en: {
+    tagline:"One search for Thingiverse, Printables and MakerWorld", placeholder:"Search 3D models (benchy, headphone stand…)", search:"Search",
+    price:"Price", all:"All", free:"Free", paid:"Paid", sort:"Sort", relevance:"Relevance", likes:"Likes", downloads:"Downloads",
+    minLikes:"Min likes", minDl:"Min downloads", perSite:"Per site", loadMore:"Load more results",
+    settings:"Settings", back:"← Back to search",
+    settingsIntro:"Tokens are stored on this computer only, in the application's configuration folder. Language and history are stored in this browser.",
+    general:"General", language:"Language", historyLabel:"Search history",
+    historyHint:"Shows your recent searches under the search bar. Turning it off stops recording and hides them; use “Clear history” to delete them.",
+    clearHistory:"Clear history", historyCleared:"History cleared", connections:"Site connections",
+    connected:"Connected", notConnected:"Not connected", disconnect:"Disconnect", connectTv:"Connect with Thingiverse", saveToken:"Save token",
+    tokenApp:"App Token", tokenBearer:"Bearer token", toastConnected:"Connected ✓", toastDisconnected:"Disconnected",
+    hint_thingiverse:"Without a connection, search reads the website with Chrome (slower, no author or likes). With a token, it uses the API: faster, with author, likes and downloads. The token is required for Like and collections. Get an “App Token” at thingiverse.com/developers.",
+    hint_printables:"Search works without a connection. A Bearer token is required for Like: sign in on the website, open the developer tools (F12), Network tab, and copy the value after “Authorization: Bearer” from a request to api.printables.com.",
+    hint_makerworld:"Search works without a connection (Chrome required). Like and collections are not available for MakerWorld yet: the token is kept for later and has no effect for now.",
+    like:"Like", liked:"Liked", collection:"＋ Collection", open:"Open ↗", paidP:"💰 Paid ({p})",
+    toastLiked:"Liked ✓", toastAdded:"Added ✓", promptCollection:"Collection ID:",
+    searching:"Searching… (MakerWorld and Thingiverse without a token can take a few seconds)",
+    results:"{n} result(s) shown", none:"No results for these criteria.", pickSite:"Select at least one site.",
+    recent:"Recent searches", clearAll:"Clear all", remove:"Remove"
+  },
+  fr: {
+    tagline:"Une seule recherche pour Thingiverse, Printables et MakerWorld", placeholder:"Rechercher un modèle 3D (benchy, support casque…)", search:"Rechercher",
+    price:"Prix", all:"Tous", free:"Gratuit", paid:"Payant", sort:"Tri", relevance:"Pertinence", likes:"Likes", downloads:"Téléchargements",
+    minLikes:"Likes min", minDl:"Téléch. min", perSite:"Par site", loadMore:"Charger plus de résultats",
+    settings:"Paramètres", back:"← Retour à la recherche",
+    settingsIntro:"Les jetons restent enregistrés sur cet ordinateur uniquement, dans le dossier de configuration de l'application. La langue et l'historique sont enregistrés dans ce navigateur.",
+    general:"Général", language:"Langue", historyLabel:"Historique de recherche",
+    historyHint:"Affiche vos recherches récentes sous la barre de recherche. Le désactiver arrête l'enregistrement et les masque ; utilisez « Effacer l'historique » pour les supprimer.",
+    clearHistory:"Effacer l'historique", historyCleared:"Historique effacé", connections:"Connexion aux sites",
+    connected:"Connecté", notConnected:"Non connecté", disconnect:"Se déconnecter", connectTv:"Se connecter avec Thingiverse", saveToken:"Enregistrer le jeton",
+    tokenApp:"App Token", tokenBearer:"Jeton Bearer", toastConnected:"Connecté ✓", toastDisconnected:"Déconnecté",
+    hint_thingiverse:"Sans connexion, la recherche lit le site avec Chrome (plus lent, sans auteur ni likes). Avec un jeton, elle passe par l'API : plus rapide, avec auteur, likes et téléchargements. Le jeton est nécessaire pour Like et les collections. Récupérez un « App Token » sur thingiverse.com/developers.",
+    hint_printables:"La recherche fonctionne sans connexion. Un jeton Bearer est nécessaire pour Like : connectez-vous sur le site, ouvrez les outils de développement (F12), onglet Réseau, et copiez la valeur après « Authorization: Bearer » d'une requête vers api.printables.com.",
+    hint_makerworld:"La recherche fonctionne sans connexion (Chrome requis). Like et collections ne sont pas encore disponibles pour MakerWorld : le jeton est conservé pour plus tard, sans effet pour l'instant.",
+    like:"Like", liked:"Liké", collection:"＋ Collection", open:"Ouvrir ↗", paidP:"💰 Payant ({p})",
+    toastLiked:"Liké ✓", toastAdded:"Ajouté ✓", promptCollection:"ID de la collection :",
+    searching:"Recherche… (MakerWorld et Thingiverse sans jeton peuvent prendre quelques secondes)",
+    results:"{n} résultat(s) affichés", none:"Aucun résultat avec ces critères.", pickSite:"Sélectionnez au moins un site.",
+    recent:"Recherches récentes", clearAll:"Tout effacer", remove:"Supprimer"
+  }
+};
+let lang = store.get('lang', 'en'); if(!I18N[lang]) lang = 'en';          // anglais par défaut
+let historyOn = store.get('historyOn', true);
+let searchHistory = store.get('history', []); if(!Array.isArray(searchHistory)) searchHistory = [];
+let shown = [], statusKey = null, statusVars = {}, histIdx = -1;
+
+function tr(key, vars){
+  const s = (I18N[lang] && I18N[lang][key]) ?? I18N.en[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => vars[k]) : s;
+}
+function setStatus(key, vars = {}){
+  statusKey = key; statusVars = vars;
+  $('#status').textContent = key ? tr(key, vars) : '';
+}
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = tr(e.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(e => { e.placeholder = tr(e.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-title]').forEach(e => { const x = tr(e.dataset.i18nTitle); e.title = x; e.setAttribute('aria-label', x); });
+  setStatus(statusKey, statusVars);
+  if(shown.length && !document.querySelector('.skel')) $('#grid').replaceChildren(...shown.map(card));
+  if(document.body.classList.contains('view-settings')) renderSettings();
+  renderHist();
+}
+
+// ---------- Historique de recherche ----------
+function saveHistory(q){
+  if(!historyOn) return;
+  searchHistory = [q, ...searchHistory.filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 20);
+  store.set('history', searchHistory);
+}
+function removeHistory(q){ searchHistory = searchHistory.filter(x => x !== q); store.set('history', searchHistory); renderHist(); }
+function clearHistory(){ searchHistory = []; store.set('history', searchHistory); renderHist(); toast(tr('historyCleared')); }
+function histItems(){
+  const q = $('#q').value.trim().toLowerCase();
+  return searchHistory.filter(h => !q || h.toLowerCase().includes(q)).slice(0, 8);
+}
+function renderHist(){
+  const box = $('#hist');
+  const items = (historyOn && document.activeElement === $('#q')) ? histItems() : [];
+  if(!items.length){ box.hidden = true; return; }
+  const noFocusLoss = e => e.preventDefault();      // garde le focus dans la barre de recherche
+  box.replaceChildren(
+    el('div',{class:'hhead'}, el('span',{},tr('recent')),
+      el('button',{type:'button',class:'link',onmousedown:noFocusLoss,onclick:clearHistory},tr('clearAll'))),
+    ...items.map((h,i) => el('div',{class:'hitem'+(i===histIdx?' active':''),onmousedown:noFocusLoss,onclick:()=>useHistory(h)},
+      el('span',{},'🕘'), el('span',{class:'htext'},h),
+      el('button',{type:'button',class:'hx',title:tr('remove'),onmousedown:noFocusLoss,onclick:e=>{ e.stopPropagation(); removeHistory(h); }},'✕'))));
+  box.hidden = false;
+}
+function useHistory(h){
+  $('#q').value = h; histIdx = -1; $('#hist').hidden = true;
+  clearTimeout(timer); runSearch(true);
+}
+
+const siteIcon = s => el('img',{class:'sico s-'+s,src:`/icons/${s}.svg`,alt:'',width:'22',height:'22'});
+
+function buildSiteFilters(){
+  const box = $('#filters'); box.replaceChildren();
+  for(const [key,label] of Object.entries(SITES)){
+    const cb = el('input',{type:'checkbox',value:key}); cb.checked = true;
+    box.append(el('label',{class:'site-opt'}, cb, siteIcon(key), label));
+  }
+}
+
+async function renderSettings(){
+  try{ connected = await api('/api/status'); }catch(e){ toast(e.message); return; }
+  oauthOk = !!connected.thingiverse_oauth;
+  const box = $('#siteSettings'); box.replaceChildren();
+  Object.entries(SITES).forEach(([key,label],idx)=>{
+    const on = !!connected[key];
+    const rows = [];
+    if(on){
+      rows.push(el('button',{type:'button',onclick:async()=>{ await post('/api/logout',{site:key}); toast(tr('toastDisconnected')); renderSettings(); }},tr('disconnect')));
+    } else {
+      if(key==='thingiverse' && oauthOk)
+        rows.push(el('button',{type:'button',class:'primary',onclick:()=>{ location.href='/auth/thingiverse'; }},tr('connectTv')));
+      const input = el('input',{type:'password',placeholder:key==='thingiverse'?tr('tokenApp'):tr('tokenBearer'),autocomplete:'off'});
+      const save = async () => {
+        const t = input.value.trim(); if(!t){ input.focus(); return; }
+        try{ await post('/api/login',{site:key,token:t}); toast(tr('toastConnected')); renderSettings(); }catch(e){ toast(e.message); }
+      };
+      input.addEventListener('keydown', e => { if(e.key==='Enter') save(); });
+      rows.push(input, el('button',{type:'button',class:'primary',onclick:save},tr('saveToken')));
+    }
+    const c = el('div',{class:'scard'},
+      el('div',{class:'shead'}, siteIcon(key), el('strong',{},label), el('span',{class:'state'+(on?' on':'')}, on?tr('connected'):tr('notConnected'))),
+      el('p',{class:'hint'}, tr('hint_'+key)),
+      el('div',{class:'srow'}, rows));
+    c.style.setProperty('--i', idx);
+    box.append(c);
+  });
+}
+
+function applyView(){
+  const inSettings = location.hash === '#parametres';
+  document.body.classList.toggle('view-settings', inSettings);
+  if(inSettings){ $('#langSel').value = lang; $('#histOn').checked = historyOn; renderSettings(); }
+}
+window.addEventListener('hashchange', applyView);
+$('#gear').addEventListener('click', () => { location.hash = 'parametres'; });
+$('#back').addEventListener('click', () => { history.pushState('', document.title, location.pathname + location.search); applyView(); });
+
+function card(m, i){
+  const stats = [m.likes!=null?`♥ ${m.likes}`:null, m.downloads!=null?`⬇ ${m.downloads}`:null].filter(Boolean).join('  ');
+  const wrap = el('div',{class:'thumbwrap'});
+  if(m.thumbnail){
+    const img = el('img',{class:'thumb',src:m.thumbnail,loading:'lazy',referrerpolicy:'no-referrer',alt:''});
+    img.addEventListener('load',()=>img.classList.add('loaded'));
+    img.addEventListener('error',()=>img.remove());
+    wrap.append(img);
+  }
+  wrap.append('🧊'); // visible tant que l'image n'est pas chargée (ou absente)
+
+  const heart = () => el('span',{class:'heart'},'♥');
+  const likeBtn = el('button',{onclick:async ev=>{
+    const b = ev.currentTarget;
+    try{ await post('/api/like',{site:m.site,id:m.id}); b.classList.add('liked'); b.replaceChildren(heart(),' '+tr('liked')); toast(tr('toastLiked')); }
+    catch(e){ b.classList.add('shake'); setTimeout(()=>b.classList.remove('shake'),400); toast(e.message); }
+  }}, heart(), ' '+tr('like'));
+  const colBtn = el('button',{onclick:async ()=>{
+    const c = prompt(tr('promptCollection')); if(!c) return;
+    try{ await post('/api/collect',{site:m.site,id:m.id,collection:c}); toast(tr('toastAdded')); }catch(e){ toast(e.message) }
+  }},tr('collection'));
+
+  const c = el('div',{class:'card'}, wrap, el('div',{class:'body'},
+    el('span',{class:'badge'},siteIcon(m.site),SITES[m.site]),
+    el('div',{class:'title'},m.title),
+    el('div',{class:'meta'},m.author+(stats?(m.author?' · ':'')+stats:'')),
+    el('div',{class:'price'}, m.price==null ? '' : m.price>0 ? tr('paidP',{p:m.price}) : tr('free')),
+    el('div',{class:'actions'}, likeBtn, colBtn,
+      el('a',{href:m.url,target:'_blank',rel:'noopener noreferrer'},tr('open')))));
+  c.style.setProperty('--i', i % 12);
+  return c;
+}
+
+function showSkeleton(n){
+  for(let i=0;i<n;i++){ const s=el('div',{class:'skel'}); s.style.animationDelay=`${i*80}ms`; $('#grid').append(s); }
+}
+const clearSkeleton = () => document.querySelectorAll('.skel').forEach(e=>e.remove());
+
+function setLoading(on){
+  $('#go').disabled = on; $('#go').classList.toggle('loading', on);
+  $('#more').disabled = on;
+}
+
+async function runSearch(reset){
+  const q = reset ? $('#q').value.trim() : lastQ;
+  if(!q) return;
+  const sites = [...document.querySelectorAll('#filters input:checked')].map(c=>c.value).join(',');
+
+  if(reset){
+    document.body.classList.remove('hero');           // la barre remonte avec une animation
+    if(!sites){ clearSkeleton(); $('#grid').replaceChildren(); $('#more').style.display='none';
+      setStatus('pickSite'); return; }
+    page = 1; lastQ = q; total = 0; shown = []; saveHistory(q);
+    $('#grid').replaceChildren(); $('#more').style.display='none';
+  } else { page++; }
+
+  const mySeq = ++seq;
+  if(ctrl) ctrl.abort();                              // une recherche plus récente annule l'ancienne
+  ctrl = new AbortController();
+  setLoading(true);
+  setStatus('searching');
+  $('#errors').replaceChildren();
+  showSkeleton(reset ? 8 : 4);
+
+  try{
+    const params = {q, sites, limit:$('#limit').value, page};
+    if($('#price').value) params.price=$('#price').value;
+    if($('#sort').value) params.sort=$('#sort').value;
+    if($('#minlikes').value) params.min_likes=$('#minlikes').value;
+    if($('#mindl').value) params.min_downloads=$('#mindl').value;
+    const r = await api('/api/search?'+new URLSearchParams(params), {signal: ctrl.signal});
+    if(mySeq !== seq) return;
+    clearSkeleton();
+    for(const [s,msg] of Object.entries(r.errors)) $('#errors').append(el('div',{class:'msg err'},`${SITES[s]} : ${msg}`));
+    $('#grid').append(...r.results.map((m,i)=>card(m, i)));
+    shown.push(...r.results);
+    total += r.results.length;
+    setStatus(total ? 'results' : 'none', {n: total});
+    $('#more').style.display = r.raw > 0 ? '' : 'none';
+  }catch(err){
+    if(err.name === 'AbortError' || mySeq !== seq) return;
+    clearSkeleton(); if(!reset) page--;
+    setStatus(null);
+    $('#errors').append(el('div',{class:'msg err'},err.message));
+  }
+  if(mySeq === seq) setLoading(false);
+}
+
+// Recherche automatique quand un filtre change (avec une requête déjà saisie)
+function autoSearch(delay){
+  if(!$('#q').value.trim()) return;
+  clearTimeout(timer); timer = setTimeout(()=>runSearch(true), delay);
+}
+const stage = document.querySelector('.stage');
+stage.addEventListener('change', e => { if(e.target.matches('.filters input[type=checkbox], .filters select')) autoSearch(0); });
+stage.addEventListener('input',  e => { if(e.target.matches('.filters input[type=number]')) autoSearch(500); });
+
+$('#f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(timer); $('#hist').hidden = true; runSearch(true); });
+$('#more').addEventListener('click', () => runSearch(false));
+$('#brand').addEventListener('click', () => {      // retour à l'écran d'accueil
+  if(ctrl) ctrl.abort(); seq++; clearTimeout(timer);
+  setLoading(false); clearSkeleton();
+  $('#grid').replaceChildren(); $('#errors').replaceChildren(); setStatus(null); $('#more').style.display='none';
+  $('#q').value=''; lastQ=''; shown=[]; document.body.classList.add('hero'); $('#q').focus();
+});
+
+// Historique : s'affiche quand la barre de recherche a le focus
+$('#q').addEventListener('focus', () => { histIdx = -1; renderHist(); });
+$('#q').addEventListener('input', () => { histIdx = -1; renderHist(); });
+$('#q').addEventListener('blur', () => { $('#hist').hidden = true; });
+$('#q').addEventListener('keydown', e => {
+  const items = histItems();
+  if($('#hist').hidden || !items.length){ if(e.key === 'ArrowDown'){ histIdx = -1; renderHist(); } return; }
+  if(e.key === 'ArrowDown'){ e.preventDefault(); histIdx = (histIdx + 1) % items.length; renderHist(); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); histIdx = histIdx <= 0 ? items.length - 1 : histIdx - 1; renderHist(); }
+  else if(e.key === 'Enter' && histIdx >= 0){ e.preventDefault(); useHistory(items[histIdx]); }
+  else if(e.key === 'Escape'){ $('#hist').hidden = true; }
+});
+
+// Réglages généraux
+$('#langSel').addEventListener('change', e => { lang = e.target.value; store.set('lang', lang); applyLang(); });
+$('#histOn').addEventListener('change', e => { historyOn = e.target.checked; store.set('historyOn', historyOn); renderHist(); });
+$('#clearHist').addEventListener('click', clearHistory);
+
+applyLang();
+buildSiteFilters();
+applyView();
+renderHist();
+</script>
+</body>
+</html>
