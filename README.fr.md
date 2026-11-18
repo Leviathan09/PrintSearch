@@ -5,7 +5,7 @@
 Une seule barre de recherche pour les modèles d'impression 3D de **Thingiverse**, **Printables** et **MakerWorld**.
 Une petite application Rust avec une interface web locale et un mode ligne de commande : recherchez sur les trois sites en même temps, filtrez et triez les résultats, likez un modèle ou ajoutez-le à une collection, et retrouvez vos recherches récentes. Ce code a été écrit par Claude afin de garantir une transparence totale ; je n'aurais jamais pu le faire tout seul : cela m'aurait pris trop de temps et je n'ai pas les connaissances nécessaires.
 
-![Alt text](printsearch.png)
+![Capture d'écran de PrintSearch 1](printsearch.png)
 
 > **Non affilié à Thingiverse, Printables ni MakerWorld.** Les noms et logos appartiennent à leurs propriétaires et ne servent qu'à identifier chaque source. Voir [Limites et mentions légales](#limites-et-mentions-légales).
 
@@ -36,8 +36,8 @@ Pas besoin d'OpenSSL (le projet utilise `rustls`).
 ### Depuis les sources (Linux, macOS, Windows)
 
 ```bash
-git clone https://github.com/<votre-compte>/printsearch.git
-cd printsearch
+git clone https://github.com/Print-lab/PrintSearch.git
+cd PrintSearch
 cargo build --release
 ```
 
@@ -51,7 +51,7 @@ cargo deb
 sudo apt install ./target/debian/printsearch_*_amd64.deb
 ```
 
-Le paquet *recommande* Chromium, donc `apt` proposera de l'installer. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` et `license` dans `Cargo.toml`.
+Le paquet *recommande* Chromium, donc `apt` proposera de l'installer. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` dans `Cargo.toml`.
 
 ### Exécutable Windows
 
@@ -61,7 +61,7 @@ Compilez sous Windows avec `cargo build --release`, puis copiez `target\release\
 
 ### Interface web
 
-![Alt text](printsearch-2.png)
+![Capture d'écran de PrintSearch 2](printsearch-2.png)
 
 Lancez `printsearch` sans argument : il démarre le serveur local et ouvre votre navigateur sur **http://localhost:8787**.
 
@@ -191,8 +191,8 @@ Ajouter un site, c'est ajouter dans `src/providers/` un fichier qui implémente 
 
 ## Contribuer
 
-Issues et pull requests bienvenues, en particulier pour vérifier ou corriger les points d'accès expérimentaux, ajouter des sites et des traductions (l'objet `I18N` dans `web/index.html`).
+Les [issues](https://github.com/Print-lab/PrintSearch/issues) et pull requests sont bienvenues, en particulier pour vérifier ou corriger les points d'accès expérimentaux, ajouter des sites et des traductions (l'objet `I18N` dans `web/index.html`).
 
 ## Licence
 
-Voir le fichier `LICENSE`.
+PrintSearch est un logiciel libre, publié sous licence **GNU General Public License v3.0** (GPL-3.0). Voir le fichier [LICENSE](LICENSE).
