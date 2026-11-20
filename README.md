@@ -19,6 +19,7 @@ A small Rust application with a local web interface and a command-line mode: sea
 - **Like** and **add to collection** from the result cards (see [feature support](#feature-support)).
 - **Search history** under the search bar (can be turned off) and a **language setting** (English by default, French available).
 - Local only: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer.
+- **Update check** against this GitHub repository (Settings, command line, and a discreet notice at startup that you can turn off). Nothing is downloaded or installed automatically.
 - Also usable from the **command line**.
 
 ## Requirements
@@ -69,6 +70,16 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 The icon is embedded with `windres` (included in `mingw-w64`); if it is missing, the build still succeeds, just without the icon (a warning is printed).
 
+## Updating
+
+**⚙ Settings → Updates → Check for updates** (or `printsearch update`) compares your version with the latest release published on GitHub. By default the app also checks once at startup and shows a small notice if a newer version exists; untick *Check automatically at startup* to disable it. **Nothing is downloaded or installed for you**; to update:
+
+- **From source:** `git pull`, then `cargo build --release`.
+- **Debian / Ubuntu:** download the new `.deb` from the [Releases page](https://github.com/Print-lab/PrintSearch/releases) and run `sudo apt install ./printsearch_*_amd64.deb`.
+- **Windows:** replace `printsearch.exe` with the new one.
+
+The check only contacts GitHub (`api.github.com`, or `github.com` if the API rate limit is reached) and sends nothing but a standard request.
+
 ## Usage
 
 ### Web interface
@@ -95,6 +106,9 @@ printsearch login thingiverse                      # OAuth (see below)
 printsearch login printables --token <TOKEN>
 printsearch like thingiverse 763622
 printsearch collect thingiverse <COLLECTION_ID> 763622
+
+printsearch update                                 # check GitHub for a newer version
+printsearch --version
 ```
 
 `-l/--limit` is the number of results *per site* and *per page*; `--page` starts at 1.
@@ -189,6 +203,8 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 - **Printables returns a GraphQL error or nothing**: the unofficial API may have changed; open an issue with the message.
 - **Like fails**: your token may have expired or the route may have changed (see *Feature support*).
 - **"Address already in use"**: port **8787** is fixed (the Thingiverse OAuth redirect depends on it). Close the other instance.
+- **"GitHub rate limit reached"** (update check): GitHub limits anonymous API calls per IP address. The app then falls back to reading the public releases page; if both fail, try again later.
+- **"invalid peer certificate" / TLS errors** behind a company proxy or an antivirus that inspects HTTPS: the app uses your system's certificate store, so install your organization's root certificate there.
 - **Server error messages are in French** for now; the interface itself is fully translated.
 
 ## Limitations & legal notes
