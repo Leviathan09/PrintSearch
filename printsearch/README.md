@@ -18,7 +18,7 @@ A small Rust application with a local web interface and a command-line mode: sea
 - **Load more results** pagination, with a short-lived cache so repeated searches are fast.
 - **Like** and **add to collection** from the result cards (see [feature support](#feature-support)).
 - **Search history** under the search bar (can be turned off) and a **language setting** (English by default, French available).
-- Local only: the server listens on `127.0.0.1`, your tokens never leave your computer.
+- Local only: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer.
 - Also usable from the **command line**.
 
 ## Requirements
@@ -26,7 +26,8 @@ A small Rust application with a local web interface and a command-line mode: sea
 | What | Why |
 |---|---|
 | [Rust](https://rustup.rs) (stable) | to build from source |
-| **Google Chrome or Chromium** | MakerWorld has no usable public API, so it is read with a headless browser. Thingiverse uses it as a fallback when you have no token. |
+| A **Chromium-based browser**: Chrome, **Edge**, Brave, Vivaldi or Chromium | MakerWorld has no usable public API, so it is read with a headless browser. Thingiverse uses it as a fallback when you have no token. **Windows already ships with Edge**, so there is usually nothing to install. Firefox and Safari are not supported. You choose which one in ⚙ Settings. |
+| `rustfmt` (included in a normal `rustup` install) | needed to build the `headless_chrome` dependency; if you installed Rust with the *minimal* profile, run `rustup component add rustfmt` |
 | Windows only: *Visual Studio Build Tools* ("Desktop development with C++") | required by Rust on Windows |
 
 No OpenSSL needed (the project uses `rustls`).
@@ -51,11 +52,22 @@ cargo deb
 sudo apt install ./target/debian/printsearch_*_amd64.deb
 ```
 
-Chromium is *recommended* by the package, so `apt` will offer to install it. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
+A Chromium-based browser (Chromium, Chrome, Edge or Brave) is *recommended* by the package, so `apt` will offer to install one. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
 
 ### Windows executable
 
+The `.exe` embeds the application icon. 
 Build on Windows with `cargo build --release`, then copy `target\release\printsearch.exe` anywhere. A console window stays open while the app runs: closing it stops the server. Windows SmartScreen or the firewall may show a prompt on first launch (the server only listens locally, you can allow it).
+
+### Cross-compiling the Windows `.exe` from Linux
+
+```bash
+sudo apt install mingw-w64
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+The icon is embedded with `windres` (included in `mingw-w64`); if it is missing, the build still succeeds, just without the icon (a warning is printed).
 
 ## Usage
 
@@ -87,6 +99,17 @@ printsearch collect thingiverse <COLLECTION_ID> 763622
 
 `-l/--limit` is the number of results *per site* and *per page*; `--page` starts at 1.
 
+### Choosing the browser used for searches
+
+⚙ **Settings → Browser used for searches**: *Automatic* (first one found, in the order Chrome, Edge, Brave, Vivaldi, Chromium), a detected browser, or a **custom path** to any Chromium-based executable. From the command line:
+
+```bash
+printsearch browser                 # lists detected browsers and the current choice
+printsearch browser edge            # chrome | edge | brave | vivaldi | chromium | auto | /path/to/browser
+```
+
+The browser runs in the background (no window), with images disabled for speed; your own browsing is untouched.
+
 ## Connecting your accounts
 
 **Searching works without any account** on Printables and MakerWorld. Connecting is only needed for actions on your account (like, collections) and, on Thingiverse, for faster and richer search.
@@ -95,7 +118,7 @@ Everything is done in **⚙ Settings → Site connections**: each site has a sta
 
 ### Thingiverse
 
-Without a token, search reads the website with Chrome (slower; no author, likes or downloads). With a token it uses the official API: fast, with author, likes and downloads. A token is **required for Like and collections**.
+Without a token, search reads the website with a browser running in the background (slower; no author, likes or downloads). With a token it uses the official API: fast, with author, likes and downloads. A token is **required for Like and collections**.
 
 **Option A, App Token (simplest).**
 1. Sign in at <https://www.thingiverse.com/developers> and create an app.
@@ -136,7 +159,7 @@ These tokens **expire**: if Like starts failing, repeat the steps. Treat a token
 
 ### MakerWorld
 
-Search works without a connection (Chrome required). Like and collections are **not implemented** for MakerWorld yet; the field exists in Settings for the future and currently has no effect.
+Search works without a connection (needs a Chromium-based browser). Like and collections are **not implemented** for MakerWorld yet; the field exists in Settings for the future and currently has no effect.
 
 ### Where tokens are stored
 
@@ -146,7 +169,7 @@ In a `config.json` inside the application's configuration folder (typically `~/.
 
 | | Thingiverse | Printables | MakerWorld |
 |---|---|---|---|
-| Search without login | ✅ via Chrome (slower, limited data) | ✅ | ✅ via Chrome (limited data) |
+| Search without login | ✅ via a browser (slower, limited data) | ✅ | ✅ via a browser (limited data) |
 | Search with token | ✅ official API (fast, full data) | n/a | n/a |
 | Author / likes / downloads | ✅ with token | ✅ | ❌ |
 | Price filter | ✅ always free | ⚠️ best effort | ❌ unknown |
@@ -159,7 +182,8 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 
 ## Troubleshooting
 
-- **"Chrome/Chromium not found"**: install Google Chrome or Chromium and restart the app.
+- **"No Chromium-based browser found"**: install Chrome, Edge, Brave or Chromium, or pick one (or type its path) in ⚙ Settings → *Browser used for searches*. `printsearch browser` lists what was detected.
+- **"The browser did not start within 35 s"**: the browser you selected is probably not Chromium-based (or the path is wrong). Pick another one in Settings.
 - **MakerWorld or Thingiverse returns nothing / "no result read"**: the site probably shows an anti-bot check (e.g. a page titled "Just a moment…"), which an automated browser cannot always pass. For Thingiverse, connect with an App Token to use the API instead. The error banner shows the title of the page that was read, which helps to diagnose.
 - **Thingiverse is slow without a token**: that is the browser fallback; use an App Token.
 - **Printables returns a GraphQL error or nothing**: the unofficial API may have changed; open an issue with the message.
@@ -179,7 +203,7 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 src/main.rs            CLI (clap) and entry point
 src/server.rs          local web server (axum) + JSON API
 src/search.rs          multi-site search, merging, filters, sorting
-src/browser.rs         headless Chrome reader (single shared instance, cache)
+src/browser.rs         headless browser reader (detection, single shared instance, cache)
 src/providers/         one file per site (Thingiverse, Printables, MakerWorld)
 src/config.rs          token storage
 web/index.html         the whole front-end (embedded in the binary)
@@ -188,6 +212,10 @@ packaging/             .desktop launcher and icon for the .deb
 ```
 
 Adding a site means adding a file implementing the `Provider` trait in `src/providers/`.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

@@ -18,7 +18,7 @@ Une petite application Rust avec une interface web locale et un mode ligne de co
 - **Charger plus de résultats** (pagination) et petit cache pour que les recherches répétées soient rapides.
 - **Like** et **ajout à une collection** depuis les cartes de résultats (voir [fonctionnalités par site](#fonctionnalités-par-site)).
 - **Historique de recherche** sous la barre de recherche (désactivable) et **choix de la langue** (anglais par défaut, français disponible).
-- Strictement local : le serveur n'écoute que sur `127.0.0.1`, vos jetons ne quittent pas votre ordinateur.
+- Strictement local : le serveur n'écoute que sur `127.0.0.1` et refuse les requêtes qui ne viennent pas de `localhost:8787` (protection contre les pages web malveillantes) ; vos jetons ne quittent pas votre ordinateur.
 - Utilisable aussi en **ligne de commande**.
 
 ## Prérequis
@@ -26,7 +26,8 @@ Une petite application Rust avec une interface web locale et un mode ligne de co
 | Quoi | Pourquoi |
 |---|---|
 | [Rust](https://rustup.rs) (stable) | pour compiler depuis les sources |
-| **Google Chrome ou Chromium** | MakerWorld n'a pas d'API publique exploitable : il est lu avec un navigateur sans interface. Thingiverse s'en sert en repli quand vous n'avez pas de jeton. |
+| Un **navigateur basé sur Chromium** : Chrome, **Edge**, Brave, Vivaldi ou Chromium | MakerWorld n'a pas d'API publique exploitable : il est lu avec un navigateur sans interface. Thingiverse s'en sert en repli quand vous n'avez pas de jeton. **Windows est livré avec Edge**, il n'y a donc en général rien à installer. Firefox et Safari ne sont pas pris en charge. Vous choisissez lequel dans ⚙ Paramètres. |
+| `rustfmt` (inclus dans une installation `rustup` normale) | nécessaire pour compiler la dépendance `headless_chrome` ; si Rust a été installé avec le profil *minimal*, lancez `rustup component add rustfmt` |
 | Windows uniquement : *Visual Studio Build Tools* (« Desktop development with C++ ») | requis par Rust sous Windows |
 
 Pas besoin d'OpenSSL (le projet utilise `rustls`).
@@ -51,11 +52,22 @@ cargo deb
 sudo apt install ./target/debian/printsearch_*_amd64.deb
 ```
 
-Le paquet *recommande* Chromium, donc `apt` proposera de l'installer. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` dans `Cargo.toml`.
+Le paquet *recommande* un navigateur basé sur Chromium (Chromium, Chrome, Edge ou Brave), donc `apt` proposera d'en installer un. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` dans `Cargo.toml`.
 
 ### Exécutable Windows
 
+L'`.exe` embarque l'icône de l'application. 
 Compilez sous Windows avec `cargo build --release`, puis copiez `target\release\printsearch.exe` où vous voulez. Une fenêtre de console reste ouverte pendant l'utilisation : la fermer arrête le serveur. SmartScreen ou le pare-feu peuvent afficher une alerte au premier lancement (le serveur n'écoute qu'en local, vous pouvez autoriser).
+
+### Compiler l'`.exe` Windows depuis Linux
+
+```bash
+sudo apt install mingw-w64
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+L'icône est intégrée avec `windres` (fourni par `mingw-w64`) ; s'il manque, la compilation réussit quand même, simplement sans icône (un avertissement s'affiche).
 
 ## Utilisation
 
@@ -87,6 +99,17 @@ printsearch collect thingiverse <ID_COLLECTION> 763622
 
 `-l/--limit` est le nombre de résultats *par site* et *par page* ; `--page` commence à 1.
 
+### Choisir le navigateur utilisé pour les recherches
+
+⚙ **Paramètres → Navigateur utilisé pour les recherches** : *Automatique* (le premier trouvé, dans l'ordre Chrome, Edge, Brave, Vivaldi, Chromium), un navigateur détecté, ou un **chemin personnalisé** vers n'importe quel exécutable basé sur Chromium. En ligne de commande :
+
+```bash
+printsearch browser                 # liste les navigateurs détectés et le choix actuel
+printsearch browser edge            # chrome | edge | brave | vivaldi | chromium | auto | /chemin/du/navigateur
+```
+
+Le navigateur tourne en arrière-plan (sans fenêtre), images désactivées pour aller plus vite ; votre navigation personnelle n'est pas touchée.
+
 ## Connecter vos comptes
 
 **La recherche fonctionne sans compte** sur Printables et MakerWorld. La connexion n'est utile que pour les actions sur votre compte (like, collections) et, sur Thingiverse, pour une recherche plus rapide et plus complète.
@@ -95,7 +118,7 @@ Tout se passe dans **⚙ Paramètres → Connexion aux sites** : chaque site a u
 
 ### Thingiverse
 
-Sans jeton, la recherche lit le site avec Chrome (plus lent ; sans auteur, likes ni téléchargements). Avec un jeton, elle utilise l'API officielle : rapide, avec auteur, likes et téléchargements. Un jeton est **obligatoire pour Like et les collections**.
+Sans jeton, la recherche lit le site avec un navigateur en arrière-plan (plus lent ; sans auteur, likes ni téléchargements). Avec un jeton, elle utilise l'API officielle : rapide, avec auteur, likes et téléchargements. Un jeton est **obligatoire pour Like et les collections**.
 
 **Option A, App Token (la plus simple).**
 1. Connectez-vous sur <https://www.thingiverse.com/developers> et créez une app.
@@ -136,7 +159,7 @@ Ces jetons **expirent** : si Like se met à échouer, recommencez. Traitez un je
 
 ### MakerWorld
 
-La recherche fonctionne sans connexion (Chrome requis). Like et collections ne sont **pas encore implémentés** pour MakerWorld ; le champ existe dans les Paramètres pour plus tard et n'a pour l'instant aucun effet.
+La recherche fonctionne sans connexion (navigateur basé sur Chromium requis). Like et collections ne sont **pas encore implémentés** pour MakerWorld ; le champ existe dans les Paramètres pour plus tard et n'a pour l'instant aucun effet.
 
 ### Où sont stockés les jetons
 
@@ -146,7 +169,7 @@ Dans un fichier `config.json` du dossier de configuration de l'application (typi
 
 | | Thingiverse | Printables | MakerWorld |
 |---|---|---|---|
-| Recherche sans connexion | ✅ via Chrome (plus lent, données limitées) | ✅ | ✅ via Chrome (données limitées) |
+| Recherche sans connexion | ✅ via un navigateur (plus lent, données limitées) | ✅ | ✅ via un navigateur (données limitées) |
 | Recherche avec jeton | ✅ API officielle (rapide, données complètes) | n/a | n/a |
 | Auteur / likes / téléchargements | ✅ avec jeton | ✅ | ❌ |
 | Filtre de prix | ✅ toujours gratuit | ⚠️ au mieux | ❌ inconnu |
@@ -159,7 +182,8 @@ Quand une valeur est inconnue (par exemple les likes sur MakerWorld), les filtre
 
 ## Dépannage
 
-- **« Chrome/Chromium introuvable »** : installez Google Chrome ou Chromium et relancez l'application.
+- **« Aucun navigateur basé sur Chromium trouvé »** : installez Chrome, Edge, Brave ou Chromium, ou choisissez-en un (ou saisissez son chemin) dans ⚙ Paramètres → *Navigateur utilisé pour les recherches*. `printsearch browser` liste ce qui a été détecté.
+- **« Le navigateur ne démarre pas (délai de 35 s) »** : le navigateur choisi n'est probablement pas basé sur Chromium (ou le chemin est faux). Choisissez-en un autre dans les Paramètres.
 - **MakerWorld ou Thingiverse ne renvoie rien / « aucun résultat lu »** : le site affiche probablement une vérification anti-bot (par exemple une page intitulée « Just a moment… ») que le navigateur automatisé ne passe pas toujours. Pour Thingiverse, connectez-vous avec un App Token pour passer par l'API. Le bandeau d'erreur affiche le titre de la page lue, ce qui aide au diagnostic.
 - **Thingiverse est lent sans jeton** : c'est le repli par navigateur ; utilisez un App Token.
 - **Printables renvoie une erreur GraphQL ou rien** : l'API non officielle a peut-être changé ; ouvrez une issue avec le message.
@@ -179,7 +203,7 @@ Quand une valeur est inconnue (par exemple les likes sur MakerWorld), les filtre
 src/main.rs            CLI (clap) et point d'entrée
 src/server.rs          serveur web local (axum) + API JSON
 src/search.rs          recherche multi-sites, fusion, filtres, tri
-src/browser.rs         lecteur Chrome sans interface (instance partagée, cache)
+src/browser.rs         lecteur de pages sans interface (détection, instance partagée, cache)
 src/providers/         un fichier par site (Thingiverse, Printables, MakerWorld)
 src/config.rs          stockage des jetons
 web/index.html         tout le front-end (intégré au binaire)
@@ -188,6 +212,10 @@ packaging/             lanceur .desktop et icône pour le .deb
 ```
 
 Ajouter un site, c'est ajouter dans `src/providers/` un fichier qui implémente le trait `Provider`.
+
+## Historique des versions
+
+Voir [CHANGELOG.fr.md](CHANGELOG.fr.md).
 
 ## Contribuer
 

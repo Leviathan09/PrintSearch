@@ -11,7 +11,7 @@ use providers::{provider, Site};
 use search::{search_all, Filters, PriceFilter, Sort};
 
 #[derive(Parser)]
-#[command(name = "printsearch", about = "Recherche unifiée : MakerWorld, Thingiverse, Printables")]
+#[command(name = "printsearch", version, about = "Recherche unifiée : MakerWorld, Thingiverse, Printables")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -52,6 +52,8 @@ enum Cmd {
         #[arg(long)]
         open: bool,
     },
+    /// Liste les navigateurs compatibles, ou en choisit un : `browser auto|chrome|edge|brave|vivaldi|chromium|<chemin>`
+    Browser { choice: Option<String> },
     /// Liker un modèle
     Like {
         #[arg(value_enum)]
@@ -71,6 +73,7 @@ enum Cmd {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut cfg = Config::load()?;
+    browser::set_choice(cfg.browser.clone());
 
     match cli.cmd.unwrap_or(Cmd::Serve { open: true }) {
         Cmd::Search { query, sites, limit, page, price, sort, min_likes, min_downloads } => {
@@ -111,6 +114,25 @@ async fn main() -> Result<()> {
             println!("Connecté à {}.", site.key());
         }
         Cmd::Serve { open } => server::run(open).await?,
+        Cmd::Browser { choice } => match choice {
+            None => {
+                let current = cfg.browser.clone();
+                println!("Selected: {}", current.as_deref().unwrap_or("auto"));
+                for f in browser::detect() {
+                    println!("  {:<9} {}  ({})", f.id, f.name, f.path);
+                }
+                match browser::effective(current.as_deref()) {
+                    Some(f) => println!("In use: {} ({})", f.name, f.path),
+                    None => println!("No compatible browser found (Chrome, Edge, Brave, Vivaldi, Chromium)."),
+                }
+            }
+            Some(c) => {
+                browser::validate_choice(&c)?;
+                cfg.browser = if c == "auto" { None } else { Some(c.clone()) };
+                cfg.save()?;
+                println!("Browser set to {c}.");
+            }
+        },
         Cmd::Like { site, id } => {
             let t = cfg.token_for(site).context("non connecté : lancez `login` d'abord")?;
             provider(site).like(&id, &t).await?;

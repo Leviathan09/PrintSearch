@@ -3,13 +3,15 @@ use crate::config::Config;
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::{header, StatusCode},
-    response::{Html, Redirect},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
+use anyhow::Context;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -24,8 +26,26 @@ fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
     Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("site inconnu : {k}")))
 }
 
+/// Protection contre les pages web tierces (CSRF, « DNS rebinding ») : seules les requêtes adressées
+/// à localhost:8787 et, si elles ont une origine, venant de localhost:8787 sont acceptées.
+async fn local_only(req: Request, next: Next) -> Response {
+    const OK: [&str; 2] = ["localhost:8787", "127.0.0.1:8787"];
+    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| OK.contains(&h));
+    let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
+        None => true,
+        Some(o) => o.strip_prefix("http://").map_or(false, |h| OK.contains(&h)),
+    };
+    if host_ok && origin_ok {
+        next.run(req).await
+    } else {
+        (StatusCode::FORBIDDEN, "forbidden").into_response()
+    }
+}
+
 pub async fn run(open_browser: bool) -> anyhow::Result<()> {
-    let state: Shared = Arc::new(Mutex::new(Config::load()?));
+    let cfg = Config::load()?;
+    crate::browser::set_choice(cfg.browser.clone());
+    let state: Shared = Arc::new(Mutex::new(cfg));
     let app = Router::new()
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
         .route("/icons/:name", get(icon))
@@ -33,13 +53,17 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .route("/api/status", get(status))
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
+        .route("/api/browser", get(browser_info).post(browser_set))
         .route("/api/like", post(like))
         .route("/api/collect", post(collect))
         .route("/auth/thingiverse", get(auth_thingiverse))
         .route("/callback", get(callback))
+        .layer(middleware::from_fn(local_only))
         .with_state(state);
-    tokio::task::spawn_blocking(crate::browser::warm); // Chrome prêt avant la 1re recherche
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8787").await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8787")
+        .await
+        .context("port 8787 already in use (another PrintSearch running?) / port 8787 déjà utilisé")?;
+    tokio::task::spawn_blocking(crate::browser::warm); // navigateur prêt avant la 1re recherche
     println!("Interface disponible sur http://localhost:8787 (fermez cette fenêtre ou Ctrl+C pour arrêter)");
     if open_browser {
         let _ = open::that("http://localhost:8787");
@@ -163,4 +187,36 @@ async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'stati
         _ => return Err(StatusCode::NOT_FOUND),
     };
     Ok(([(header::CONTENT_TYPE, "image/svg+xml")], svg))
+}
+
+fn browser_json(choice: Option<String>) -> Value {
+    json!({
+        "choice": choice.clone().unwrap_or_else(|| "auto".into()),
+        "detected": crate::browser::detect(),
+        "effective": crate::browser::effective(choice.as_deref()),
+    })
+}
+
+async fn browser_info(State(cfg): State<Shared>) -> Json<Value> {
+    let choice = cfg.lock().await.browser.clone();
+    Json(browser_json(choice))
+}
+
+#[derive(Deserialize)]
+struct BrowserBody {
+    choice: String,
+}
+
+async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> ApiResult {
+    let choice = b.choice.trim().to_string();
+    crate::browser::validate_choice(&choice).map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    let stored = if choice.is_empty() || choice == "auto" { None } else { Some(choice) };
+    {
+        let mut c = cfg.lock().await;
+        c.browser = stored.clone();
+        c.save().map_err(err)?;
+    }
+    crate::browser::set_choice(stored.clone());
+    tokio::task::spawn_blocking(crate::browser::warm);
+    Ok(Json(browser_json(stored)))
 }

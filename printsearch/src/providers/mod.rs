@@ -62,11 +62,20 @@ pub fn provider(site: Site) -> Box<dyn Provider> {
     }
 }
 
+/// Un seul client HTTP pour tout le programme (connexions réutilisées) avec des délais d'attente,
+/// pour qu'un site qui ne répond pas ne bloque jamais une recherche.
 pub(crate) fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent("printsearch/0.1 (+personal tool)")
-        .build()
-        .expect("client http")
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent(concat!("printsearch/", env!("CARGO_PKG_VERSION"), " (+personal tool)"))
+                .connect_timeout(std::time::Duration::from_secs(8))
+                .timeout(std::time::Duration::from_secs(25))
+                .build()
+                .expect("client http")
+        })
+        .clone()
 }
 
 pub(crate) fn text(v: &Value, key: &str) -> Option<String> {

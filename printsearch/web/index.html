@@ -56,6 +56,7 @@ body.hero main{display:none}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
   animation:rise .55s var(--ease) backwards;animation-delay:calc(var(--i,0) * 45ms);
   transition:transform .25s var(--ease),box-shadow .25s,border-color .25s}
+.card.seen{animation:none}
 .card:hover{transform:translateY(-5px);box-shadow:0 14px 30px rgba(0,0,0,.14);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
 .thumbwrap{position:relative;aspect-ratio:4/3;background:var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:34px}
 .thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s,transform .6s var(--ease)}
@@ -108,8 +109,8 @@ body.view-settings .settings{display:block;animation:rise .5s var(--ease)}
 .state.on{color:var(--ok);border-color:var(--ok)}
 .hint{color:var(--muted);font-size:13px;margin:8px 0 12px}
 .srow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.srow input[type=password]{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
-.srow input[type=password]:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.srow input[type=password],.srow input[type=text]{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.srow input[type=password]:focus,.srow input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
 body.view-settings .settings button.primary{padding:8px 14px;font-size:14px;border-radius:10px}
 .searchbox{position:relative;flex:1;min-width:0}
 .searchbox input[type=search]{width:100%}
@@ -177,6 +178,16 @@ body.view-settings .settings button.primary{padding:8px 14px;font-size:14px;bord
       </div>
       <p class="hint" style="margin-bottom:0" data-i18n="historyHint"></p>
     </div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="browserTitle"></strong><span class="state" id="browserState"></span></div>
+      <p class="hint" data-i18n="browserHint"></p>
+      <div class="srow">
+        <select id="browserSel"></select>
+        <input type="text" id="browserPath" hidden data-i18n-placeholder="browserPathPh" autocomplete="off" spellcheck="false">
+        <button type="button" class="primary" id="browserSave" data-i18n="save"></button>
+      </div>
+      <p class="hint" id="browserInfo" style="margin:10px 0 0;overflow-wrap:anywhere"></p>
+    </div>
     <h3 data-i18n="connections"></h3>
     <div id="siteSettings"></div>
   </div>
@@ -228,12 +239,16 @@ const I18N = {
     clearHistory:"Clear history", historyCleared:"History cleared", connections:"Site connections",
     connected:"Connected", notConnected:"Not connected", disconnect:"Disconnect", connectTv:"Connect with Thingiverse", saveToken:"Save token",
     tokenApp:"App Token", tokenBearer:"Bearer token", toastConnected:"Connected ✓", toastDisconnected:"Disconnected",
-    hint_thingiverse:"Without a connection, search reads the website with Chrome (slower, no author or likes). With a token, it uses the API: faster, with author, likes and downloads. The token is required for Like and collections. Get an “App Token” at thingiverse.com/developers.",
+    hint_thingiverse:"Without a connection, search reads the website with a browser running in the background (slower, no author or likes). With a token, it uses the API: faster, with author, likes and downloads. The token is required for Like and collections. Get an “App Token” at thingiverse.com/developers.",
     hint_printables:"Search works without a connection. A Bearer token is required for Like: sign in on the website, open the developer tools (F12), Network tab, and copy the value after “Authorization: Bearer” from a request to api.printables.com.",
-    hint_makerworld:"Search works without a connection (Chrome required). Like and collections are not available for MakerWorld yet: the token is kept for later and has no effect for now.",
+    hint_makerworld:"Search works without a connection (needs a Chromium-based browser: Chrome, Edge, Brave…). Like and collections are not available for MakerWorld yet: the token is kept for later and has no effect for now.",
     like:"Like", liked:"Liked", collection:"＋ Collection", open:"Open ↗", paidP:"💰 Paid ({p})",
     toastLiked:"Liked ✓", toastAdded:"Added ✓", promptCollection:"Collection ID:",
-    searching:"Searching… (MakerWorld and Thingiverse without a token can take a few seconds)",
+    loadingSites:"Searching… {done}/{total} sites done ({n} results so far)",
+    browserTitle:"Browser used for searches", browserAuto:"Automatic (first one found)", browserCustom:"Custom path…",
+    browserPathPh:"Full path to the browser executable", save:"Save", browserNone:"No compatible browser found",
+    browserUsing:"In use: {name} — {path}", browserSaved:"Browser saved ✓",
+    browserHint:"MakerWorld, and Thingiverse without a token, are read with a Chromium-based browser running in the background (Chrome, Edge, Brave, Vivaldi, Chromium). Edge is already installed on Windows, so you may not need to install anything. Firefox and Safari are not supported.",
     results:"{n} result(s) shown", none:"No results for these criteria.", pickSite:"Select at least one site.",
     recent:"Recent searches", clearAll:"Clear all", remove:"Remove"
   },
@@ -248,12 +263,16 @@ const I18N = {
     clearHistory:"Effacer l'historique", historyCleared:"Historique effacé", connections:"Connexion aux sites",
     connected:"Connecté", notConnected:"Non connecté", disconnect:"Se déconnecter", connectTv:"Se connecter avec Thingiverse", saveToken:"Enregistrer le jeton",
     tokenApp:"App Token", tokenBearer:"Jeton Bearer", toastConnected:"Connecté ✓", toastDisconnected:"Déconnecté",
-    hint_thingiverse:"Sans connexion, la recherche lit le site avec Chrome (plus lent, sans auteur ni likes). Avec un jeton, elle passe par l'API : plus rapide, avec auteur, likes et téléchargements. Le jeton est nécessaire pour Like et les collections. Récupérez un « App Token » sur thingiverse.com/developers.",
+    hint_thingiverse:"Sans connexion, la recherche lit le site avec un navigateur en arrière-plan (plus lent, sans auteur ni likes). Avec un jeton, elle passe par l'API : plus rapide, avec auteur, likes et téléchargements. Le jeton est nécessaire pour Like et les collections. Récupérez un « App Token » sur thingiverse.com/developers.",
     hint_printables:"La recherche fonctionne sans connexion. Un jeton Bearer est nécessaire pour Like : connectez-vous sur le site, ouvrez les outils de développement (F12), onglet Réseau, et copiez la valeur après « Authorization: Bearer » d'une requête vers api.printables.com.",
-    hint_makerworld:"La recherche fonctionne sans connexion (Chrome requis). Like et collections ne sont pas encore disponibles pour MakerWorld : le jeton est conservé pour plus tard, sans effet pour l'instant.",
+    hint_makerworld:"La recherche fonctionne sans connexion (navigateur basé sur Chromium requis : Chrome, Edge, Brave…). Like et collections ne sont pas encore disponibles pour MakerWorld : le jeton est conservé pour plus tard, sans effet pour l'instant.",
     like:"Like", liked:"Liké", collection:"＋ Collection", open:"Ouvrir ↗", paidP:"💰 Payant ({p})",
     toastLiked:"Liké ✓", toastAdded:"Ajouté ✓", promptCollection:"ID de la collection :",
-    searching:"Recherche… (MakerWorld et Thingiverse sans jeton peuvent prendre quelques secondes)",
+    loadingSites:"Recherche… {done}/{total} sites terminés ({n} résultats pour l'instant)",
+    browserTitle:"Navigateur utilisé pour les recherches", browserAuto:"Automatique (le premier trouvé)", browserCustom:"Chemin personnalisé…",
+    browserPathPh:"Chemin complet de l'exécutable du navigateur", save:"Enregistrer", browserNone:"Aucun navigateur compatible trouvé",
+    browserUsing:"Utilisé : {name} — {path}", browserSaved:"Navigateur enregistré ✓",
+    browserHint:"MakerWorld, et Thingiverse sans jeton, sont lus avec un navigateur basé sur Chromium qui tourne en arrière-plan (Chrome, Edge, Brave, Vivaldi, Chromium). Edge est déjà installé sous Windows : il n'y a peut-être rien à installer. Firefox et Safari ne sont pas pris en charge.",
     results:"{n} résultat(s) affichés", none:"Aucun résultat avec ces critères.", pickSite:"Sélectionnez au moins un site.",
     recent:"Recherches récentes", clearAll:"Tout effacer", remove:"Supprimer"
   }
@@ -277,7 +296,7 @@ function applyLang(){
   document.querySelectorAll('[data-i18n-placeholder]').forEach(e => { e.placeholder = tr(e.dataset.i18nPlaceholder); });
   document.querySelectorAll('[data-i18n-title]').forEach(e => { const x = tr(e.dataset.i18nTitle); e.title = x; e.setAttribute('aria-label', x); });
   setStatus(statusKey, statusVars);
-  if(shown.length && !document.querySelector('.skel')) $('#grid').replaceChildren(...shown.map(card));
+  if(shown.length && !document.querySelector('.skel')){ nodeCache.clear(); renderGrid(0); }
   if(document.body.classList.contains('view-settings')) renderSettings();
   renderHist();
 }
@@ -322,7 +341,26 @@ function buildSiteFilters(){
   }
 }
 
+async function renderBrowser(){
+  let info;
+  try{ info = await api('/api/browser'); }catch(e){ return; }
+  const detected = Array.isArray(info.detected) ? info.detected : [];
+  const sel = $('#browserSel'); sel.replaceChildren();
+  sel.append(el('option', {value:'auto'}, tr('browserAuto')));
+  detected.forEach(f => sel.append(el('option', {value:f.id}, f.name)));
+  sel.append(el('option', {value:'custom'}, tr('browserCustom')));
+  const known = !info.choice || info.choice === 'auto' || detected.some(f => f.id === info.choice);
+  sel.value = known ? (info.choice || 'auto') : 'custom';
+  $('#browserPath').hidden = sel.value !== 'custom';
+  if(!known) $('#browserPath').value = info.choice;
+  const st = $('#browserState');
+  st.textContent = info.effective ? info.effective.name : tr('browserNone');
+  st.classList.toggle('on', !!info.effective);
+  $('#browserInfo').textContent = info.effective ? tr('browserUsing', {name: info.effective.name, path: info.effective.path}) : '';
+}
+
 async function renderSettings(){
+  renderBrowser();
   try{ connected = await api('/api/status'); }catch(e){ toast(e.message); return; }
   oauthOk = !!connected.thingiverse_oauth;
   const box = $('#siteSettings'); box.replaceChildren();
@@ -390,6 +428,7 @@ function card(m, i){
     el('div',{class:'actions'}, likeBtn, colBtn,
       el('a',{href:m.url,target:'_blank',rel:'noopener noreferrer'},tr('open')))));
   c.style.setProperty('--i', i % 12);
+  c.addEventListener('animationend', ev => { if(ev.target === c) c.classList.add('seen'); });
   return c;
 }
 
@@ -403,49 +442,89 @@ function setLoading(on){
   $('#more').disabled = on;
 }
 
+let pages = [], nodeCache = new Map(), curSort = '';
+const SITE_ORDER = Object.keys(SITES);
+
+// Fusionne les résultats d'une page : un modèle de chaque site à tour de rôle, puis tri éventuel
+function mergePage(batch){
+  const lists = SITE_ORDER.filter(k => batch[k]).map(k => batch[k]);
+  const out = [];
+  for(let i = 0, max = Math.max(0, ...lists.map(l => l.length)); i < max; i++)
+    for(const l of lists) if(l[i]) out.push(l[i]);
+  if(curSort === 'likes') out.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
+  else if(curSort === 'downloads') out.sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0));
+  return out;
+}
+
+// Redessine la grille en réutilisant les cartes déjà créées (pas de clignotement ni d'animation rejouée)
+function renderGrid(pending = 0){
+  const seenKeys = new Set(), uniq = [], nodes = [];
+  for(const m of pages.flatMap(mergePage)){
+    const key = m.site + ':' + m.id;
+    if(seenKeys.has(key)) continue;                    // même modèle présent deux fois
+    seenKeys.add(key); uniq.push(m);
+    let n = nodeCache.get(key);
+    if(!n){ n = card(m, uniq.length - 1); nodeCache.set(key, n); }
+    nodes.push(n);
+  }
+  shown = uniq;
+  $('#grid').replaceChildren(...nodes);
+  if(pending > 0) showSkeleton(nodes.length ? 3 : 8);
+}
+
 async function runSearch(reset){
   const q = reset ? $('#q').value.trim() : lastQ;
   if(!q) return;
-  const sites = [...document.querySelectorAll('#filters input:checked')].map(c=>c.value).join(',');
+  const mySeq = ++seq;                                 // toute nouvelle recherche annule la précédente
+  if(ctrl) ctrl.abort();
+  ctrl = new AbortController();
+  const signal = ctrl.signal;
+  const sites = [...document.querySelectorAll('#filters input:checked')].map(c => c.value);
+  $('#errors').replaceChildren();
 
   if(reset){
-    document.body.classList.remove('hero');           // la barre remonte avec une animation
-    if(!sites){ clearSkeleton(); $('#grid').replaceChildren(); $('#more').style.display='none';
-      setStatus('pickSite'); return; }
-    page = 1; lastQ = q; total = 0; shown = []; saveHistory(q);
-    $('#grid').replaceChildren(); $('#more').style.display='none';
-  } else { page++; }
-
-  const mySeq = ++seq;
-  if(ctrl) ctrl.abort();                              // une recherche plus récente annule l'ancienne
-  ctrl = new AbortController();
-  setLoading(true);
-  setStatus('searching');
-  $('#errors').replaceChildren();
-  showSkeleton(reset ? 8 : 4);
-
-  try{
-    const params = {q, sites, limit:$('#limit').value, page};
-    if($('#price').value) params.price=$('#price').value;
-    if($('#sort').value) params.sort=$('#sort').value;
-    if($('#minlikes').value) params.min_likes=$('#minlikes').value;
-    if($('#mindl').value) params.min_downloads=$('#mindl').value;
-    const r = await api('/api/search?'+new URLSearchParams(params), {signal: ctrl.signal});
-    if(mySeq !== seq) return;
-    clearSkeleton();
-    for(const [s,msg] of Object.entries(r.errors)) $('#errors').append(el('div',{class:'msg err'},`${SITES[s]} : ${msg}`));
-    $('#grid').append(...r.results.map((m,i)=>card(m, i)));
-    shown.push(...r.results);
-    total += r.results.length;
-    setStatus(total ? 'results' : 'none', {n: total});
-    $('#more').style.display = r.raw > 0 ? '' : 'none';
-  }catch(err){
-    if(err.name === 'AbortError' || mySeq !== seq) return;
-    clearSkeleton(); if(!reset) page--;
-    setStatus(null);
-    $('#errors').append(el('div',{class:'msg err'},err.message));
+    document.body.classList.remove('hero');            // la barre remonte avec une animation
+    pages = []; nodeCache.clear(); shown = []; page = 1; lastQ = q;
+    $('#grid').replaceChildren(); $('#more').style.display = 'none';
   }
-  if(mySeq === seq) setLoading(false);
+  if(!sites.length){ setLoading(false); setStatus('pickSite'); return; }
+  if(reset) saveHistory(q); else page++;
+
+  curSort = $('#sort').value;
+  const batch = {}; pages[page - 1] = batch;
+  const base = {q, limit: $('#limit').value, page};
+  if($('#price').value) base.price = $('#price').value;
+  if($('#sort').value) base.sort = $('#sort').value;
+  if($('#minlikes').value) base.min_likes = $('#minlikes').value;
+  if($('#mindl').value) base.min_downloads = $('#mindl').value;
+
+  let pending = sites.length, raw = 0, failures = 0;
+  setLoading(true);
+  setStatus('loadingSites', {done: 0, total: sites.length, n: shown.length});
+  renderGrid(pending);                                 // cartes grises en attendant la 1re réponse
+
+  // Un appel par site, en parallèle : les sites rapides s'affichent sans attendre les lents
+  await Promise.all(sites.map(async site => {
+    try{
+      const r = await api('/api/search?' + new URLSearchParams({...base, sites: site}), {signal});
+      if(mySeq !== seq) return;
+      batch[site] = r.results; raw += r.raw;
+      for(const [k, msg] of Object.entries(r.errors)){ failures++; $('#errors').append(el('div', {class:'msg err'}, `${SITES[k]} : ${msg}`)); }
+    }catch(err){
+      if(err.name === 'AbortError' || mySeq !== seq) return;
+      failures++; $('#errors').append(el('div', {class:'msg err'}, `${SITES[site]} : ${err.message}`));
+    }finally{
+      if(mySeq === seq){
+        pending--;
+        renderGrid(pending);
+        setStatus(pending ? 'loadingSites' : (shown.length ? 'results' : 'none'), {done: sites.length - pending, total: sites.length, n: shown.length});
+      }
+    }
+  }));
+  if(mySeq !== seq) return;
+  setLoading(false);
+  if(!reset && failures === sites.length){ page--; pages.pop(); }   // page suivante en échec : on pourra réessayer
+  $('#more').style.display = raw > 0 ? '' : 'none';
 }
 
 // Recherche automatique quand un filtre change (avec une requête déjà saisie)
@@ -463,7 +542,7 @@ $('#brand').addEventListener('click', () => {      // retour à l'écran d'accue
   if(ctrl) ctrl.abort(); seq++; clearTimeout(timer);
   setLoading(false); clearSkeleton();
   $('#grid').replaceChildren(); $('#errors').replaceChildren(); setStatus(null); $('#more').style.display='none';
-  $('#q').value=''; lastQ=''; shown=[]; document.body.classList.add('hero'); $('#q').focus();
+  $('#q').value=''; lastQ=''; shown=[]; pages=[]; nodeCache.clear(); document.body.classList.add('hero'); $('#q').focus();
 });
 
 // Historique : s'affiche quand la barre de recherche a le focus
@@ -483,6 +562,12 @@ $('#q').addEventListener('keydown', e => {
 $('#langSel').addEventListener('change', e => { lang = e.target.value; store.set('lang', lang); applyLang(); });
 $('#histOn').addEventListener('change', e => { historyOn = e.target.checked; store.set('historyOn', historyOn); renderHist(); });
 $('#clearHist').addEventListener('click', clearHistory);
+$('#browserSel').addEventListener('change', () => { $('#browserPath').hidden = $('#browserSel').value !== 'custom'; });
+$('#browserSave').addEventListener('click', async () => {
+  const v = $('#browserSel').value === 'custom' ? $('#browserPath').value.trim() : $('#browserSel').value;
+  if(!v){ $('#browserPath').focus(); return; }
+  try{ await post('/api/browser', {choice: v}); toast(tr('browserSaved')); renderBrowser(); }catch(e){ toast(e.message); }
+});
 
 applyLang();
 buildSiteFilters();

@@ -3,10 +3,14 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
-/// Jetons d'authentification stockés par site (clé = "thingiverse", "printables", "makerworld").
+/// Réglages enregistrés : jetons par site ("thingiverse", "printables", "makerworld")
+/// et navigateur utilisé pour la lecture des pages ("auto", un identifiant ou un chemin).
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Config {
+    #[serde(default)]
     pub tokens: BTreeMap<String, String>,
+    #[serde(default)]
+    pub browser: Option<String>,
 }
 
 fn path() -> Result<PathBuf> {
@@ -32,14 +36,17 @@ impl Config {
         Ok(serde_json::from_str(&fs::read_to_string(p)?)?)
     }
 
+    /// Écriture atomique (fichier temporaire puis renommage) : pas de config à moitié écrite.
     pub fn save(&self) -> Result<()> {
         let p = path()?;
-        fs::write(&p, serde_json::to_string_pretty(self)?)?;
+        let tmp = p.with_extension("json.tmp");
+        fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&p, fs::Permissions::from_mode(0o600))?; // jetons = secrets
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?; // jetons = secrets
         }
+        fs::rename(&tmp, &p)?;
         Ok(())
     }
 }
