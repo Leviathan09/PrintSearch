@@ -185,7 +185,7 @@ In a `config.json` inside the application's configuration folder (typically `~/.
 |---|---|---|---|
 | Search without login | ✅ via a browser (slower, limited data) | ✅ | ✅ via a browser (limited data) |
 | Search with token | ✅ official API (fast, full data) | n/a | n/a |
-| Author / likes / downloads | ✅ with token | ✅ | ❌ |
+| Author / downloads | ✅ with token | ✅ | ❌ |
 | Price filter | ✅ always free | ⚠️ best effort | ❌ unknown |
 | Like | ⚠️ with token, experimental | ⚠️ with token, experimental | ❌ |
 | Add to collection | ⚠️ with token, experimental | ❌ | ❌ |
