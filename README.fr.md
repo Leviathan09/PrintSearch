@@ -179,7 +179,7 @@ Dans un fichier `config.json` du dossier de configuration de l'application (typi
 |---|---|---|---|
 | Recherche sans connexion | ✅ via un navigateur (plus lent, données limitées) | ✅ | ✅ via un navigateur (données limitées) |
 | Recherche avec jeton | ✅ API officielle (rapide, données complètes) | n/a | n/a |
-| Auteur / likes / téléchargements | ✅ avec jeton | ✅ | ❌ |
+| Auteur / téléchargements | ✅ avec jeton | ✅ | ❌ |
 | Filtre de prix | ✅ toujours gratuit | ⚠️ au mieux | ❌ inconnu |
 | Like | ⚠️ avec jeton, expérimental | ⚠️ avec jeton, expérimental | ❌ |
 | Ajout à une collection | ⚠️ avec jeton, expérimental | ❌ | ❌ |
