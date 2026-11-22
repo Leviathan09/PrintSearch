@@ -1,4 +1,4 @@
-//! Interface web locale. Écoute uniquement sur 127.0.0.1 : les jetons ne quittent pas votre machine.
+//! Local web interface: tokens never leave your machine.
 use crate::config::Config;
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
@@ -23,11 +23,11 @@ fn err(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::BAD_GATEWAY, format!("{e:#}"))
 }
 fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
-    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("site inconnu : {k}")))
+    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("unknown site: {k}")))
 }
 
-/// Protection contre les pages web tierces (CSRF, « DNS rebinding ») : seules les requêtes adressées
-/// à localhost:8787 et, si elles ont une origine, venant de localhost:8787 sont acceptées.
+/// Protection against third-party web pages (CSRF, "DNS rebinding"): only requests addressed
+/// to an allowed host (see OK) and, if they carry an origin, coming from one, are accepted.
 async fn local_only(req: Request, next: Next) -> Response {
     const OK: [&str; 2] = ["localhost:8787", "127.0.0.1:8787"];
     let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| OK.contains(&h));
@@ -62,9 +62,9 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8787")
         .await
-        .context("port 8787 already in use (another PrintSearch running?) / port 8787 déjà utilisé")?;
-    tokio::task::spawn_blocking(crate::browser::warm); // navigateur prêt avant la 1re recherche
-    println!("Interface disponible sur http://localhost:8787 (fermez cette fenêtre ou Ctrl+C pour arrêter)");
+        .context("port 8787 already in use (another PrintSearch running?)")?;
+    tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
+    println!("Interface available at http://localhost:8787 (close this window or press Ctrl+C to stop)");
     if open_browser {
         let _ = open::that("http://localhost:8787");
     }
@@ -120,7 +120,7 @@ struct LoginBody {
 
 async fn login(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResult {
     let site = site_of(&b.site)?;
-    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "jeton vide".into()))?;
+    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "empty token".into()))?;
     let mut c = cfg.lock().await;
     c.tokens.insert(site.key().into(), token.trim().to_string());
     c.save().map_err(err)?;
@@ -143,7 +143,7 @@ struct ActionBody {
 }
 
 async fn token_of(cfg: &Shared, site: Site) -> Result<String, (StatusCode, String)> {
-    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "non connecté à ce site".into()))
+    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "not connected to this site".into()))
 }
 
 async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
@@ -156,7 +156,7 @@ async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult
 async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
     let t = token_of(&cfg, site).await?;
-    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "collection manquante".into()))?;
+    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "missing collection".into()))?;
     provider(site).add_to_collection(&col, &b.id, &t).await.map_err(err)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -178,7 +178,7 @@ async fn callback(State(cfg): State<Shared>, Query(p): Query<CallbackParams>) ->
     Ok(Redirect::to("/#parametres"))
 }
 
-/// Icônes des sites, intégrées au binaire (remplaçables : voir web/icons/).
+/// Site icons, embedded in the binary (replaceable: see web/icons/).
 async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'static str); 1], &'static str), StatusCode> {
     let svg = match name.as_str() {
         "thingiverse.svg" => include_str!("../web/icons/thingiverse.svg"),
