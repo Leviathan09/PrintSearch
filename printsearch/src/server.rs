@@ -1,4 +1,6 @@
-//! Local web interface: tokens never leave your machine.
+//! Local web interface. Listens on 127.0.0.1 only by default: tokens never leave your machine.
+//! To reach it from another machine set `PRINTSEARCH_BIND` (address to listen on) and, if you use a
+//! host name or a wildcard bind (0.0.0.0), `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated names).
 use crate::config::Config;
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
@@ -13,7 +15,7 @@ use axum::{
 use serde::Deserialize;
 use anyhow::Context;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 type Shared = Arc<Mutex<Config>>;
@@ -26,14 +28,50 @@ fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
     Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("unknown site: {k}")))
 }
 
+const PORT: u16 = 8787;
+const DEFAULT_BIND: &str = "127.0.0.1";
+
+/// Address to listen on: `PRINTSEARCH_BIND`, or 127.0.0.1.
+fn bind_addr() -> String {
+    std::env::var("PRINTSEARCH_BIND")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_BIND.into())
+}
+
+fn is_wildcard(addr: &str) -> bool {
+    addr == "0.0.0.0" || addr == "::"
+}
+
+/// `Host` / `Origin` values that are accepted: localhost, 127.0.0.1, the bind address (unless it is
+/// a wildcard) and every name in `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated), each with the port.
+fn allowed_hosts() -> &'static Vec<String> {
+    static HOSTS: OnceLock<Vec<String>> = OnceLock::new();
+    HOSTS.get_or_init(|| {
+        let mut hosts = vec!["localhost".to_string(), DEFAULT_BIND.to_string()];
+        let bind = bind_addr();
+        if !is_wildcard(&bind) {
+            hosts.push(bind);
+        }
+        if let Ok(extra) = std::env::var("PRINTSEARCH_ALLOWED_HOSTS") {
+            hosts.extend(extra.split(',').map(|h| h.trim().to_string()).filter(|h| !h.is_empty()));
+        }
+        hosts
+            .into_iter()
+            .map(|h| if h.contains(':') && !h.starts_with('[') { format!("[{h}]:{PORT}") } else { format!("{h}:{PORT}") })
+            .collect()
+    })
+}
+
 /// Protection against third-party web pages (CSRF, "DNS rebinding"): only requests addressed
-/// to an allowed host (see OK) and, if they carry an origin, coming from one, are accepted.
+/// to an allowed host and, if they carry an origin, coming from an allowed host, are accepted.
 async fn local_only(req: Request, next: Next) -> Response {
-    const OK: [&str; 2] = ["localhost:8787", "127.0.0.1:8787"];
-    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| OK.contains(&h));
+    let ok = allowed_hosts();
+    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| ok.iter().any(|a| a == h));
     let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
         None => true,
-        Some(o) => o.strip_prefix("http://").map_or(false, |h| OK.contains(&h)),
+        Some(o) => o.strip_prefix("http://").map_or(false, |h| ok.iter().any(|a| a == h)),
     };
     if host_ok && origin_ok {
         next.run(req).await
@@ -60,13 +98,19 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .route("/callback", get(callback))
         .layer(middleware::from_fn(local_only))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8787")
+    let bind = bind_addr();
+    let listener = tokio::net::TcpListener::bind((bind.as_str(), PORT))
         .await
-        .context("port 8787 already in use (another PrintSearch running?)")?;
+        .with_context(|| format!("cannot listen on {bind}:{PORT} (port already in use by another PrintSearch?)"))?;
     tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
-    println!("Interface available at http://localhost:8787 (close this window or press Ctrl+C to stop)");
+    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) { "localhost" } else { bind.as_str() };
+    let url = format!("http://{shown}:{PORT}");
+    println!("Interface available at {url} (close this window or press Ctrl+C to stop)");
+    if bind != DEFAULT_BIND {
+        eprintln!("Warning: listening on {bind}:{PORT}. There is no authentication: anyone who can reach this address can use the interface and change the saved tokens.");
+    }
     if open_browser {
-        let _ = open::that("http://localhost:8787");
+        let _ = open::that(&url);
     }
     axum::serve(listener, app).await?;
     Ok(())

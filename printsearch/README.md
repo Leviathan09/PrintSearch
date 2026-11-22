@@ -110,6 +110,22 @@ printsearch browser edge            # chrome | edge | brave | vivaldi | chromium
 
 The browser runs in the background (no window), with images disabled for speed; your own browsing is untouched.
 
+### Access from another machine (optional)
+
+By default the server only listens on `127.0.0.1`. To reach it from another machine (for example a headless Linux server), set the address to listen on **before** starting it:
+
+```
+PRINTSEARCH_BIND=192.168.1.10 printsearch serve
+```
+
+Requests are only accepted when their `Host` is `localhost`, `127.0.0.1` or the bind address. If you use a host name, or bind to `0.0.0.0`, list the names you will type in the browser:
+
+```
+PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=myserver,192.168.1.10 printsearch serve
+```
+
+⚠ There is no authentication. Anyone who can reach that address can use PrintSearch and change the saved tokens. Only do this on a trusted network, restrict the port with a firewall, or use an SSH tunnel instead (`ssh -L 8787:localhost:8787 user@server`).
+
 ## Connecting your accounts
 
 **Searching works without any account** on Printables and MakerWorld. Connecting is only needed for actions on your account (like, collections) and, on Thingiverse, for faster and richer search.
