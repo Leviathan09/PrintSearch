@@ -54,6 +54,58 @@ sudo apt install ./target/debian/printsearch_*_amd64.deb
 
 A Chromium-based browser (Chromium, Chrome, Edge or Brave) is *recommended* by the package, so `apt` will offer to install one. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
 
+### Headless Linux server (systemd)
+
+PrintSearch runs fine on a server without a screen. Packages needed (Debian / Ubuntu):
+
+```
+sudo apt install -y git curl build-essential chromium
+```
+
+- `git`, `curl`, `build-essential` (C compiler and linker): to fetch and build the sources.
+- A Chromium-based browser, used headless in the background. The package is called `chromium` on Debian and `chromium-browser` on Ubuntu (which may install a snap); Google Chrome, Brave or Edge from their own `.deb` packages also work. If none is detected, pick one with `printsearch browser <name or /path/to/browser>`.
+- Rust (stable) through [rustup](https://rustup.rs/) (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, then `source "$HOME/.cargo/env"`). `rustfmt` is part of the default profile.
+
+Build, then run `printsearch serve` (not plain `printsearch`, which tries to open a browser window):
+
+```
+git clone https://github.com/Print-lab/PrintSearch.git
+cd PrintSearch/printsearch
+cargo build --release
+./target/release/printsearch serve
+```
+
+To keep it running after you log out and start it at boot, create `/etc/systemd/system/printsearch.service` (adjust `User` and the paths):
+
+```
+[Unit]
+Description=PrintSearch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/opt/PrintSearch/printsearch
+ExecStart=/opt/PrintSearch/printsearch/target/release/printsearch serve
+# Optional, to reach it from your network (see "Access from another machine"):
+# Environment=PRINTSEARCH_BIND=192.168.1.10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now printsearch
+journalctl -u printsearch -f          # logs
+sudo ss -tlnp | grep 8787             # check that the port is listening
+```
+
+Run the service as the user whose home holds the configuration (`~/.config/printsearch/`), so saved tokens are found. After rebuilding, run `sudo systemctl restart printsearch`.
+
 ### Windows executable
 
 The `.exe` embeds the application icon. 
