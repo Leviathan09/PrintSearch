@@ -372,8 +372,8 @@ async function renderBrowser(){
   const sel = $('#browserSel'); sel.replaceChildren();
   sel.append(el('option', {value:'auto'}, tr('browserAuto')));
   detected.forEach(f => sel.append(el('option', {value:f.id}, f.name)));
-  sel.append(el('option', {value:'custom'}, tr('browserCustom')));
   const known = !info.choice || info.choice === 'auto' || detected.some(f => f.id === info.choice);
+  if(info.custom_allowed !== false || !known) sel.append(el('option', {value:'custom'}, tr('browserCustom')));   // hidden when the server is reachable from the network
   sel.value = known ? (info.choice || 'auto') : 'custom';
   $('#browserPath').hidden = sel.value !== 'custom';
   if(!known) $('#browserPath').value = info.choice;

@@ -35,9 +35,14 @@ const DEFAULT_BIND: &str = "127.0.0.1";
 fn bind_addr() -> String {
     std::env::var("PRINTSEARCH_BIND")
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_BIND.into())
+}
+
+/// True for loopback addresses (127.0.0.0/8, ::1) and `localhost`: not reachable from the network.
+fn is_loopback(addr: &str) -> bool {
+    addr.parse::<std::net::IpAddr>().map_or(addr == "localhost", |ip| ip.is_loopback())
 }
 
 fn is_wildcard(addr: &str) -> bool {
@@ -52,7 +57,7 @@ fn allowed_hosts() -> &'static Vec<String> {
         let mut hosts = vec!["localhost".to_string(), DEFAULT_BIND.to_string()];
         let bind = bind_addr();
         if !is_wildcard(&bind) {
-            hosts.push(bind.to_lowercase());
+            hosts.push(bind);
         }
         if let Ok(extra) = std::env::var("PRINTSEARCH_ALLOWED_HOSTS") {
             hosts.extend(extra.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()));
@@ -103,17 +108,12 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("cannot listen on {bind}:{PORT} (is the address valid and assigned to this machine, and is the port free?)"))?;
     tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
-    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) {
-        "localhost".to_string()
-    } else if bind.contains(':') {
-        format!("[{bind}]") // IPv6 literal
-    } else {
-        bind.clone()
-    };
+    let bracketed = if bind.contains(':') { format!("[{bind}]") } else { bind.clone() }; // IPv6 literal
+    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) { "localhost".to_string() } else { bracketed.clone() };
     let url = format!("http://{shown}:{PORT}");
     println!("Interface available at {url} (close this window or press Ctrl+C to stop)");
-    if bind != DEFAULT_BIND {
-        eprintln!("Warning: listening on {bind}:{PORT}. There is no authentication: anyone who can reach this address can use the interface and change the saved tokens.");
+    if !is_loopback(&bind) {
+        eprintln!("Warning: listening on {bracketed}:{PORT}. There is no authentication: anyone who can reach this address can use the interface and change the saved tokens.");
     }
     if open_browser {
         let _ = open::that(&url);
@@ -244,6 +244,7 @@ fn browser_json(choice: Option<String>) -> Value {
         "choice": choice.clone().unwrap_or_else(|| "auto".into()),
         "detected": crate::browser::detect(),
         "effective": crate::browser::effective(choice.as_deref()),
+        "custom_allowed": is_loopback(&bind_addr()),
     })
 }
 
@@ -261,10 +262,10 @@ async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> A
     let choice = b.choice.trim().to_string();
     // A custom path would let anyone who can reach a network listener pick a program to launch.
     let known = choice.is_empty() || choice == "auto" || crate::browser::detect().iter().any(|f| f.id == choice);
-    if bind_addr() != DEFAULT_BIND && !known {
+    if !is_loopback(&bind_addr()) && !known {
         return Err((
             StatusCode::FORBIDDEN,
-            "custom browser paths are disabled while PRINTSEARCH_BIND is set; pick a detected browser, or run `printsearch browser <path>` on the server".into(),
+            "custom browser paths are disabled while listening on a non-loopback address (PRINTSEARCH_BIND); pick a detected browser, or run `printsearch browser <path>` on the server".into(),
         ));
     }
     crate::browser::validate_choice(&choice).map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;

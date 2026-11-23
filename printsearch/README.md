@@ -176,7 +176,7 @@ Requests are only accepted when their `Host` is `localhost`, `127.0.0.1` or the 
 PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=myserver,192.168.1.10 printsearch serve
 ```
 
-Notes: entries of `PRINTSEARCH_ALLOWED_HOSTS` are host names or IP addresses without a port (lower-case); the port is always 8787 and only plain `http://` is accepted (no TLS reverse proxy). With a wildcard bind (`0.0.0.0`) the server still prints `http://localhost:8787`: use the server's name or IP address in your browser. While `PRINTSEARCH_BIND` is set, a custom browser path cannot be saved from the web interface (use `printsearch browser <path>` on the server).
+Notes: entries of `PRINTSEARCH_ALLOWED_HOSTS` are host names or IP addresses without a port (lower-case); the port is always 8787 and only plain `http://` is accepted (no TLS reverse proxy). With a wildcard bind (`0.0.0.0`) the server still prints `http://localhost:8787`: use the server's name or IP address in your browser. While `PRINTSEARCH_BIND` is a non-loopback address (for example `0.0.0.0` or a LAN address), a custom browser path cannot be saved from the web interface (use `printsearch browser <path>` on the server).
 
 ⚠ There is no authentication. Anyone who can reach that address can use PrintSearch and change the saved tokens, and what you type (tokens included) travels unencrypted because the connection is plain HTTP. Only do this on a trusted network, restrict the port with a firewall, or use an SSH tunnel instead (`ssh -L 8787:localhost:8787 user@server`).
 
