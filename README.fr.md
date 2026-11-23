@@ -54,6 +54,58 @@ sudo apt install ./target/debian/printsearch_*_amd64.deb
  
 Le paquet *recommande* un navigateur basé sur Chromium (Chromium, Chrome, Edge ou Brave), donc `apt` proposera d'en installer un. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` dans `Cargo.toml`.
  
+### Serveur Linux sans écran (systemd)
+
+PrintSearch fonctionne très bien sur un serveur sans écran. Paquets nécessaires (Debian / Ubuntu) :
+
+```bash
+sudo apt install -y git curl build-essential chromium
+```
+
+- `git`, `curl`, `build-essential` (compilateur C et éditeur de liens) : pour récupérer et compiler les sources.
+- Un navigateur basé sur Chromium, utilisé sans fenêtre en arrière-plan. Le paquet s'appelle `chromium` sous Debian et `chromium-browser` sous Ubuntu (qui peut installer un snap) ; Google Chrome, Brave ou Edge, depuis leurs propres paquets `.deb`, conviennent aussi. Si aucun n'est détecté, choisissez-en un avec `printsearch browser <nom ou /chemin/du/navigateur>`.
+- Rust (stable) via [rustup](https://rustup.rs/) (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, puis `source "$HOME/.cargo/env"`). `rustfmt` est inclus dans le profil par défaut.
+
+Compilez, puis lancez `printsearch serve` (et non `printsearch` seul, qui essaie d'ouvrir une fenêtre de navigateur) :
+
+```bash
+git clone https://github.com/Print-lab/PrintSearch.git
+cd PrintSearch/printsearch
+cargo build --release
+./target/release/printsearch serve
+```
+
+Pour qu'il continue de tourner après la déconnexion et démarre au boot, créez `/etc/systemd/system/printsearch.service` (adaptez `User` et les chemins) :
+
+```ini
+[Unit]
+Description=PrintSearch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=votreutilisateur
+WorkingDirectory=/opt/PrintSearch/printsearch
+ExecStart=/opt/PrintSearch/printsearch/target/release/printsearch serve
+# Facultatif, pour y accéder depuis votre réseau (voir « Accéder depuis une autre machine ») :
+# Environment=PRINTSEARCH_BIND=192.168.1.10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now printsearch
+journalctl -u printsearch -f          # journaux
+sudo ss -tlnp | grep 8787             # vérifier que le port est à l'écoute
+```
+
+Lancez le service avec l'utilisateur dont le dossier personnel contient la configuration (`~/.config/printsearch/`), pour que les jetons enregistrés soient retrouvés. Après une recompilation, exécutez `sudo systemctl restart printsearch`.
+
 ### Exécutable Windows
  
 L'`.exe` embarque l'icône de l'application. 
@@ -122,6 +174,22 @@ printsearch browser edge            # chrome | edge | brave | vivaldi | chromium
  
 Le navigateur tourne en arrière-plan (sans fenêtre), images désactivées pour aller plus vite ; votre navigation personnelle n'est pas touchée.
  
+### Accéder depuis une autre machine (facultatif)
+
+Par défaut, le serveur n'écoute que sur `127.0.0.1`. Pour y accéder depuis une autre machine (par exemple un serveur sans écran), indiquez l'adresse d'écoute **avant** de le lancer :
+
+```bash
+PRINTSEARCH_BIND=192.168.1.10 printsearch serve
+```
+
+Les requêtes ne sont acceptées que si leur `Host` est `localhost`, `127.0.0.1` ou l'adresse indiquée. Si vous utilisez un nom d'hôte, ou si vous écoutez sur `0.0.0.0`, listez les noms que vous saisirez dans le navigateur :
+
+```bash
+PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=monserveur,192.168.1.10 printsearch serve
+```
+
+⚠ Il n'y a aucune authentification. Toute personne qui peut joindre cette adresse peut utiliser PrintSearch et modifier les jetons enregistrés. Ne le faites que sur un réseau de confiance, limitez le port avec un pare-feu, ou utilisez plutôt un tunnel SSH (`ssh -L 8787:localhost:8787 utilisateur@serveur`).
+
 ## Connecter vos comptes
  
 **La recherche fonctionne sans compte** sur Printables et MakerWorld. La connexion n'est utile que pour les actions sur votre compte (like, collections) et, sur Thingiverse, pour une recherche plus rapide et plus complète.
