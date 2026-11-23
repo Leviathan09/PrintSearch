@@ -52,10 +52,10 @@ fn allowed_hosts() -> &'static Vec<String> {
         let mut hosts = vec!["localhost".to_string(), DEFAULT_BIND.to_string()];
         let bind = bind_addr();
         if !is_wildcard(&bind) {
-            hosts.push(bind);
+            hosts.push(bind.to_lowercase());
         }
         if let Ok(extra) = std::env::var("PRINTSEARCH_ALLOWED_HOSTS") {
-            hosts.extend(extra.split(',').map(|h| h.trim().to_string()).filter(|h| !h.is_empty()));
+            hosts.extend(extra.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()));
         }
         hosts
             .into_iter()
@@ -101,9 +101,15 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
     let bind = bind_addr();
     let listener = tokio::net::TcpListener::bind((bind.as_str(), PORT))
         .await
-        .with_context(|| format!("cannot listen on {bind}:{PORT} (port already in use by another PrintSearch?)"))?;
+        .with_context(|| format!("cannot listen on {bind}:{PORT} (is the address valid and assigned to this machine, and is the port free?)"))?;
     tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
-    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) { "localhost" } else { bind.as_str() };
+    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) {
+        "localhost".to_string()
+    } else if bind.contains(':') {
+        format!("[{bind}]") // IPv6 literal
+    } else {
+        bind.clone()
+    };
     let url = format!("http://{shown}:{PORT}");
     println!("Interface available at {url} (close this window or press Ctrl+C to stop)");
     if bind != DEFAULT_BIND {
@@ -253,6 +259,14 @@ struct BrowserBody {
 
 async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> ApiResult {
     let choice = b.choice.trim().to_string();
+    // A custom path would let anyone who can reach a network listener pick a program to launch.
+    let known = choice.is_empty() || choice == "auto" || crate::browser::detect().iter().any(|f| f.id == choice);
+    if bind_addr() != DEFAULT_BIND && !known {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "custom browser paths are disabled while PRINTSEARCH_BIND is set; pick a detected browser, or run `printsearch browser <path>` on the server".into(),
+        ));
+    }
     crate::browser::validate_choice(&choice).map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
     let stored = if choice.is_empty() || choice == "auto" { None } else { Some(choice) };
     {

@@ -17,8 +17,8 @@ A small Rust application with a local web interface and a command-line mode: sea
 - Filters: **sites, price (free / paid), sort (relevance / likes / downloads), minimum likes, minimum downloads, results per site**. Changing a filter re-runs the search automatically.
 - **Load more results** pagination, with a short-lived cache so repeated searches are fast.
 - **Like** and **add to collection** from the result cards (see [feature support](#feature-support)).
-- **Search history** under the search bar (can be turned off) and a **language setting** (English by default, French available).
-- Local only: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer.
+- **Search history** under the search bar (can be turned off) and a **language setting** (English by default; French and German available).
+- Local by default: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer. See [Access from another machine](#access-from-another-machine-optional) to change this.
 - Also usable from the **command line**.
 
 ## Requirements
@@ -59,7 +59,7 @@ A Chromium-based browser (Chromium, Chrome, Edge or Brave) is *recommended* by t
 PrintSearch runs fine on a server without a screen. Packages needed (Debian / Ubuntu):
 
 ```
-sudo apt install -y git curl build-essential chromium
+sudo apt install -y git curl build-essential chromium   # Ubuntu: chromium-browser
 ```
 
 - `git`, `curl`, `build-essential` (C compiler and linker): to fetch and build the sources.
@@ -176,7 +176,9 @@ Requests are only accepted when their `Host` is `localhost`, `127.0.0.1` or the 
 PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=myserver,192.168.1.10 printsearch serve
 ```
 
-⚠ There is no authentication. Anyone who can reach that address can use PrintSearch and change the saved tokens. Only do this on a trusted network, restrict the port with a firewall, or use an SSH tunnel instead (`ssh -L 8787:localhost:8787 user@server`).
+Notes: entries of `PRINTSEARCH_ALLOWED_HOSTS` are host names or IP addresses without a port (lower-case); the port is always 8787 and only plain `http://` is accepted (no TLS reverse proxy). With a wildcard bind (`0.0.0.0`) the server still prints `http://localhost:8787`: use the server's name or IP address in your browser. While `PRINTSEARCH_BIND` is set, a custom browser path cannot be saved from the web interface (use `printsearch browser <path>` on the server).
+
+⚠ There is no authentication. Anyone who can reach that address can use PrintSearch and change the saved tokens, and what you type (tokens included) travels unencrypted because the connection is plain HTTP. Only do this on a trusted network, restrict the port with a firewall, or use an SSH tunnel instead (`ssh -L 8787:localhost:8787 user@server`).
 
 ## Connecting your accounts
 
@@ -257,7 +259,6 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 - **Printables returns a GraphQL error or nothing**: the unofficial API may have changed; open an issue with the message.
 - **Like fails**: your token may have expired or the route may have changed (see *Feature support*).
 - **"Address already in use"**: port **8787** is fixed (the Thingiverse OAuth redirect depends on it). Close the other instance.
-- **Server error messages are in French** for now; the interface itself is fully translated.
 
 ## Limitations & legal notes
 

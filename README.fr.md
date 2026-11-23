@@ -17,8 +17,8 @@ Une petite application Rust avec une interface web locale et un mode ligne de co
 - Filtres : **sites, prix (gratuit / payant), tri (pertinence / likes / téléchargements), likes minimum, téléchargements minimum, résultats par site**. Changer un filtre relance la recherche automatiquement.
 - **Charger plus de résultats** (pagination) et petit cache pour que les recherches répétées soient rapides.
 - **Like** et **ajout à une collection** depuis les cartes de résultats (voir [fonctionnalités par site](#fonctionnalités-par-site)).
-- **Historique de recherche** sous la barre de recherche (désactivable) et **choix de la langue** (anglais par défaut, français disponible).
-- Strictement local : le serveur n'écoute que sur `127.0.0.1` et refuse les requêtes qui ne viennent pas de `localhost:8787` (protection contre les pages web malveillantes) ; vos jetons ne quittent pas votre ordinateur.
+- **Historique de recherche** sous la barre de recherche (désactivable) et **choix de la langue** (anglais par défaut ; français et allemand disponibles).
+- Local par défaut : le serveur n'écoute que sur `127.0.0.1` et refuse les requêtes qui ne viennent pas de `localhost:8787` (protection contre les pages web malveillantes) ; vos jetons ne quittent pas votre ordinateur. Voir [Accéder depuis une autre machine](#accéder-depuis-une-autre-machine-facultatif) pour modifier cela.
 - **Vérification des mises à jour** auprès de ce dépôt GitHub (Paramètres, ligne de commande, et une discrète notification au démarrage que vous pouvez désactiver). Rien n'est téléchargé ni installé automatiquement.
 - Utilisable aussi en **ligne de commande**.
 ## Prérequis
@@ -59,7 +59,7 @@ Le paquet *recommande* un navigateur basé sur Chromium (Chromium, Chrome, Edge 
 PrintSearch fonctionne très bien sur un serveur sans écran. Paquets nécessaires (Debian / Ubuntu) :
 
 ```bash
-sudo apt install -y git curl build-essential chromium
+sudo apt install -y git curl build-essential chromium   # Ubuntu : chromium-browser
 ```
 
 - `git`, `curl`, `build-essential` (compilateur C et éditeur de liens) : pour récupérer et compiler les sources.
@@ -188,7 +188,9 @@ Les requêtes ne sont acceptées que si leur `Host` est `localhost`, `127.0.0.1`
 PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=monserveur,192.168.1.10 printsearch serve
 ```
 
-⚠ Il n'y a aucune authentification. Toute personne qui peut joindre cette adresse peut utiliser PrintSearch et modifier les jetons enregistrés. Ne le faites que sur un réseau de confiance, limitez le port avec un pare-feu, ou utilisez plutôt un tunnel SSH (`ssh -L 8787:localhost:8787 utilisateur@serveur`).
+Remarques : les entrées de `PRINTSEARCH_ALLOWED_HOSTS` sont des noms d'hôte ou des adresses IP sans port (en minuscules) ; le port est toujours 8787 et seul `http://` simple est accepté (pas de proxy inverse TLS). Avec une écoute sur toutes les interfaces (`0.0.0.0`), le serveur affiche quand même `http://localhost:8787` : utilisez le nom ou l'adresse IP du serveur dans votre navigateur. Tant que `PRINTSEARCH_BIND` est défini, un chemin de navigateur personnalisé ne peut pas être enregistré depuis l'interface web (utilisez `printsearch browser <chemin>` sur le serveur).
+
+⚠ Il n'y a aucune authentification. Toute personne qui peut joindre cette adresse peut utiliser PrintSearch et modifier les jetons enregistrés ; ce que vous saisissez (jetons compris) transite sans chiffrement, car la connexion est en HTTP simple. Ne le faites que sur un réseau de confiance, limitez le port avec un pare-feu, ou utilisez plutôt un tunnel SSH (`ssh -L 8787:localhost:8787 utilisateur@serveur`).
 
 ## Connecter vos comptes
  
@@ -267,7 +269,6 @@ Quand une valeur est inconnue (par exemple les likes sur MakerWorld), les filtre
 - **« Address already in use »** : le port **8787** est fixe (la redirection OAuth de Thingiverse en dépend). Fermez l'autre instance.
 - **« limite de requêtes GitHub atteinte »** (vérification des mises à jour) : GitHub limite les appels anonymes à son API par adresse IP. L'application se rabat alors sur la page publique des releases ; si les deux échouent, réessayez plus tard.
 - **« invalid peer certificate » / erreurs TLS** derrière un proxy d'entreprise ou un antivirus qui inspecte le HTTPS : l'application utilise le magasin de certificats du système, installez-y le certificat racine de votre organisation.
-- **Les messages d'erreur du serveur sont en français** pour l'instant ; l'interface, elle, est entièrement traduite.
 ## Limites et mentions légales
  
 - MakerWorld et Printables sont consultés par des moyens **non officiels** (un navigateur sans interface et un point d'accès GraphQL non documenté). Ceux-ci peuvent changer ou être bloqués à tout moment, et leurs conditions d'utilisation peuvent restreindre l'accès automatisé. Utilisez PrintSearch pour un **usage personnel, avec un volume de requêtes raisonnable**, et consultez les conditions de chaque site. Vous êtes responsable de votre usage.
