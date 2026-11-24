@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
-/// Réglages enregistrés : jetons par site ("thingiverse", "printables", "makerworld")
+/// Réglages enregistrés : jetons par site ("thingiverse", "printables", "makerworld"; les autres sites n'ont pas de compte)
 /// et navigateur utilisé pour la lecture des pages ("auto", un identifiant ou un chemin).
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Config {
@@ -11,6 +11,9 @@ pub struct Config {
     pub tokens: BTreeMap<String, String>,
     #[serde(default)]
     pub browser: Option<String>,
+    /// Langue de l'interface ("en" ou "fr"), utilisée pour le menu de l'icône de la barre d'état
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 fn path() -> Result<PathBuf> {
@@ -28,12 +31,22 @@ impl Config {
         })
     }
 
-    pub fn load() -> Result<Self> {
-        let p = path()?;
+    /// Charge la configuration. Un fichier illisible ou corrompu est mis de côté (`config.json.bad`)
+    /// et l'application démarre avec une configuration vide, au lieu de refuser de démarrer.
+    pub fn load() -> Self {
+        let Ok(p) = path() else { return Self::default() };
         if !p.exists() {
-            return Ok(Self::default());
+            return Self::default();
         }
-        Ok(serde_json::from_str(&fs::read_to_string(p)?)?)
+        match fs::read_to_string(&p).map_err(anyhow::Error::from).and_then(|t| serde_json::from_str::<Self>(&t).map_err(anyhow::Error::from)) {
+            Ok(c) => c,
+            Err(e) => {
+                let bad = p.with_extension("json.bad");
+                let _ = fs::rename(&p, &bad);
+                crate::log::log_warn!("config.json unreadable ({e}); moved to {} and starting with defaults", bad.display());
+                Self::default()
+            }
+        }
     }
 
     /// Écriture atomique (fichier temporaire puis renommage) : pas de config à moitié écrite.

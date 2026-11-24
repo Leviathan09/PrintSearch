@@ -1,5 +1,6 @@
 //! Recherche multi-sites + filtres, partagée par le CLI et l'interface web.
 use crate::config::Config;
+use crate::log::{log_info, log_warn};
 use crate::providers::{provider, Model, Site};
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -49,18 +50,27 @@ fn keep(m: &Model, f: &Filters) -> bool {
 }
 
 pub async fn search_all(cfg: &Config, sites: &[Site], query: &str, limit: usize, page: usize, f: &Filters) -> Outcome {
+    let shown: String = query.chars().take(120).collect(); // pour le journal : jamais de ligne démesurée
     let tasks = sites.iter().map(|&s| {
         let tok = cfg.token_for(s);
         let q = query.to_string();
-        async move { (s, provider(s).search(&q, limit, page, tok.as_deref()).await) }
+        async move {
+            let started = std::time::Instant::now();
+            let r = provider(s).search(&q, limit, page, tok.as_deref()).await;
+            (s, r, started.elapsed())
+        }
     });
 
     let mut lists: Vec<Vec<Model>> = vec![];
     let mut errors = BTreeMap::new();
-    for (s, r) in futures::future::join_all(tasks).await {
+    for (s, r, took) in futures::future::join_all(tasks).await {
         match r {
-            Ok(v) => lists.push(v),
+            Ok(v) => {
+                log_info!("search {} {shown:?} (page {page}): {} result(s) in {} ms", s.key(), v.len(), took.as_millis());
+                lists.push(v);
+            }
             Err(e) => {
+                log_warn!("search {} {shown:?} (page {page}) failed after {} ms: {e:#}", s.key(), took.as_millis());
                 errors.insert(s.key().to_string(), format!("{e:#}"));
             }
         }

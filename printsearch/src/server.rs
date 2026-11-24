@@ -1,9 +1,11 @@
 //! Interface web locale. Écoute uniquement sur 127.0.0.1 : les jetons ne quittent pas votre machine.
+use crate::commands::{self, Ctx};
 use crate::config::Config;
+use crate::log::{self, log_info, log_warn};
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
@@ -11,7 +13,6 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use anyhow::Context;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -42,8 +43,8 @@ async fn local_only(req: Request, next: Next) -> Response {
     }
 }
 
-pub async fn run(open_browser: bool) -> anyhow::Result<()> {
-    let cfg = Config::load()?;
+pub async fn run(listener: std::net::TcpListener, open_browser: bool) -> anyhow::Result<()> {
+    let cfg = Config::load();
     crate::browser::set_choice(cfg.browser.clone());
     let state: Shared = Arc::new(Mutex::new(cfg));
     let app = Router::new()
@@ -54,21 +55,27 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/browser", get(browser_info).post(browser_set))
+        .route("/api/update", get(update_info))
         .route("/api/like", post(like))
         .route("/api/collect", post(collect))
+        .route("/api/command", post(command))
+        .route("/api/logs", get(logs_text))
+        .route("/api/logs/export", get(logs_export))
+        .route("/api/quit", post(quit))
+        .route("/api/lang", post(set_lang))
         .route("/auth/thingiverse", get(auth_thingiverse))
         .route("/callback", get(callback))
+        .layer(DefaultBodyLimit::max(64 * 1024)) // aucune requête de l'interface n'a besoin de plus
         .layer(middleware::from_fn(local_only))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8787")
-        .await
-        .context("port 8787 already in use (another PrintSearch running?) / port 8787 déjà utilisé")?;
-    tokio::task::spawn_blocking(crate::browser::warm); // navigateur prêt avant la 1re recherche
-    println!("Interface disponible sur http://localhost:8787 (fermez cette fenêtre ou Ctrl+C pour arrêter)");
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    log_info!("web interface ready on {}", crate::app::URL);
+    println!("Web interface: {} (Ctrl+C to stop)", crate::app::URL);
     if open_browser {
-        let _ = open::that("http://localhost:8787");
+        let _ = open::that(crate::app::URL);
     }
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app).with_graceful_shutdown(crate::app::wait_quit()).await?;
     Ok(())
 }
 
@@ -109,6 +116,7 @@ async fn status(State(cfg): State<Shared>) -> Json<Value> {
     let mut m = m;
     let oauth = std::env::var("THINGIVERSE_CLIENT_ID").is_ok() && std::env::var("THINGIVERSE_CLIENT_SECRET").is_ok();
     m.insert("thingiverse_oauth".into(), json!(oauth));
+    m.insert("version".into(), json!(crate::update::current()));
     Json(Value::Object(m))
 }
 
@@ -124,6 +132,7 @@ async fn login(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResult
     let mut c = cfg.lock().await;
     c.tokens.insert(site.key().into(), token.trim().to_string());
     c.save().map_err(err)?;
+    log_info!("token saved for {}", site.key());
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -132,6 +141,7 @@ async fn logout(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResul
     let mut c = cfg.lock().await;
     c.tokens.remove(site.key());
     c.save().map_err(err)?;
+    log_info!("token removed for {}", site.key());
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -146,23 +156,58 @@ async fn token_of(cfg: &Shared, site: Site) -> Result<String, (StatusCode, Strin
     cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "non connecté à ce site".into()))
 }
 
+/// Identifiants envoyés tels quels dans une URL d'API : lettres, chiffres, « - » et « _ » seulement.
+fn valid_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
+    if !site.can_like() {
+        return Err((StatusCode::BAD_REQUEST, format!("Like is not available for {}", site.key())));
+    }
+    if !valid_id(&b.id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid model id".into()));
+    }
     let t = token_of(&cfg, site).await?;
-    provider(site).like(&b.id, &t).await.map_err(err)?;
+    match provider(site).like(&b.id, &t).await {
+        Ok(()) => log_info!("liked {} {}", site.key(), b.id),
+        Err(e) => {
+            log_warn!("like failed on {} {}: {e:#}", site.key(), b.id);
+            return Err(err(e));
+        }
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
 async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
+    if !site.can_collect() {
+        return Err((StatusCode::BAD_REQUEST, format!("Collections are not available for {}", site.key())));
+    }
     let t = token_of(&cfg, site).await?;
     let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "collection manquante".into()))?;
-    provider(site).add_to_collection(&col, &b.id, &t).await.map_err(err)?;
+    if !valid_id(&col) || !valid_id(&b.id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid id".into()));
+    }
+    match provider(site).add_to_collection(&col, &b.id, &t).await {
+        Ok(()) => log_info!("added {} {} to collection {col}", site.key(), b.id),
+        Err(e) => {
+            log_warn!("add to collection failed on {} {}: {e:#}", site.key(), b.id);
+            return Err(err(e));
+        }
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
+/// Instant où une connexion OAuth a été lancée depuis l'interface : une page tierce ne peut pas
+/// glisser son propre code d'autorisation dans /callback sans que l'utilisateur ait cliqué « Se connecter ».
+static OAUTH_PENDING: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
 async fn auth_thingiverse() -> Result<Redirect, (StatusCode, String)> {
-    Ok(Redirect::to(&thingiverse::authorize_url().map_err(err)?))
+    let url = thingiverse::authorize_url().map_err(err)?;
+    *OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    Ok(Redirect::to(&url))
 }
 
 #[derive(Deserialize)]
@@ -171,7 +216,16 @@ struct CallbackParams {
 }
 
 async fn callback(State(cfg): State<Shared>, Query(p): Query<CallbackParams>) -> Result<Redirect, (StatusCode, String)> {
-    let token = thingiverse::exchange_code(&p.code).await.map_err(err)?;
+    let pending = OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if !pending.map_or(false, |t| t.elapsed() < std::time::Duration::from_secs(600)) {
+        log_warn!("OAuth callback refused: no login in progress");
+        return Err((StatusCode::FORBIDDEN, "no Thingiverse login in progress".into()));
+    }
+    let token = thingiverse::exchange_code(&p.code).await.map_err(|e| {
+        log_warn!("Thingiverse OAuth failed: {e:#}");
+        err(e)
+    })?;
+    log_info!("Thingiverse connected through OAuth");
     let mut c = cfg.lock().await;
     c.tokens.insert("thingiverse".into(), token);
     c.save().map_err(err)?;
@@ -184,6 +238,9 @@ async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'stati
         "thingiverse.svg" => include_str!("../web/icons/thingiverse.svg"),
         "printables.svg" => include_str!("../web/icons/printables.svg"),
         "makerworld.svg" => include_str!("../web/icons/makerworld.svg"),
+        "thangs.svg" => include_str!("../web/icons/thangs.svg"),
+        "cults3d.svg" => include_str!("../web/icons/cults3d.svg"),
+        "myminifactory.svg" => include_str!("../web/icons/myminifactory.svg"),
         _ => return Err(StatusCode::NOT_FOUND),
     };
     Ok(([(header::CONTENT_TYPE, "image/svg+xml")], svg))
@@ -216,7 +273,79 @@ async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> A
         c.browser = stored.clone();
         c.save().map_err(err)?;
     }
+    log_info!("search browser set to {}", stored.as_deref().unwrap_or("auto"));
     crate::browser::set_choice(stored.clone());
-    tokio::task::spawn_blocking(crate::browser::warm);
     Ok(Json(browser_json(stored)))
+}
+
+#[derive(Deserialize)]
+struct UpdateParams {
+    force: Option<u8>,
+}
+
+async fn update_info(Query(p): Query<UpdateParams>) -> ApiResult {
+    let info = crate::update::check(p.force == Some(1)).await.map_err(err)?;
+    Ok(Json(json!(info)))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Console, journal, arrêt, langue
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct CommandBody {
+    line: String,
+}
+
+async fn command(State(cfg): State<Shared>, Json(b): Json<CommandBody>) -> ApiResult {
+    if b.line.len() > 2000 {
+        return Err((StatusCode::BAD_REQUEST, "command too long".into()));
+    }
+    let output = commands::run_line(&Ctx { cfg, in_app: true }, &b.line).await;
+    Ok(Json(json!({ "output": output })))
+}
+
+#[derive(Deserialize)]
+struct LogParams {
+    n: Option<usize>,
+    level: Option<log::Level>,
+}
+
+async fn logs_text(Query(p): Query<LogParams>) -> impl IntoResponse {
+    let lines = log::tail(p.n.unwrap_or(200).min(5000), p.level.unwrap_or(log::Level::Info));
+    ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], lines.join("\n"))
+}
+
+async fn logs_export(State(cfg): State<Shared>) -> impl IntoResponse {
+    let body = log::export_text(&commands::system_info(&Ctx { cfg, in_app: true }).await);
+    (
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"printsearch-logs-{}.txt\"", log::stamp_for_filename())),
+        ],
+        body,
+    )
+}
+
+async fn quit() -> Json<Value> {
+    crate::app::request_quit();
+    Json(json!({ "ok": true }))
+}
+
+#[derive(Deserialize)]
+struct LangBody {
+    lang: String,
+}
+
+/// Mémorise la langue de l'interface (pour le menu de l'icône de la barre d'état au prochain démarrage).
+async fn set_lang(State(cfg): State<Shared>, Json(b): Json<LangBody>) -> ApiResult {
+    if b.lang != "en" && b.lang != "fr" {
+        return Err((StatusCode::BAD_REQUEST, "unsupported language".into()));
+    }
+    let mut c = cfg.lock().await;
+    if c.lang.as_deref() != Some(b.lang.as_str()) {
+        c.lang = Some(b.lang);
+        c.save().map_err(err)?;
+    }
+    Ok(Json(json!({ "ok": true })))
 }

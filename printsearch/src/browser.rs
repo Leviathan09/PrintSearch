@@ -5,6 +5,7 @@
 //! Optimisations : un seul navigateur réutilisé entre les recherches (démarré à l'avance par `serve`),
 //! images/médias désactivés, pas d'attente de l'événement « load », lecture de la page toutes les
 //! 250 ms avec sortie dès que assez de cartes sont là, et cache de 10 min.
+use crate::log::{log_info, log_warn};
 use anyhow::{anyhow, bail, Context, Result};
 use headless_chrome::{Browser, LaunchOptions, Tab};
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,7 @@ pub struct Found {
 const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const CACHE_TTL: Duration = Duration::from_secs(600);
 const CACHE_MAX: usize = 40;
+const MAX_TABS: usize = 3;
 
 type CacheMap = HashMap<String, (Instant, Vec<Card>, bool)>;
 static BROWSER: Mutex<Option<Arc<Browser>>> = Mutex::new(None);
@@ -52,6 +54,11 @@ static CACHE: Mutex<Option<CacheMap>> = Mutex::new(None);
 static CHOICE: Mutex<Option<String>> = Mutex::new(None);
 /// Dernier échec de lancement (pour ne pas réessayer en boucle pendant quelques secondes).
 static FAILED: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+/// Dernier usage du navigateur d'arrière-plan : au bout de 10 min d'inactivité il est fermé (il se relance tout seul
+/// à la prochaine recherche). Une application qui reste des jours dans la barre d'état ne doit pas garder un Chrome ouvert.
+static LAST_USE: Mutex<Option<Instant>> = Mutex::new(None);
+static REAPER: std::sync::Once = std::sync::Once::new();
+const IDLE_CLOSE: Duration = Duration::from_secs(600);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(35);
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(20);
 
@@ -180,12 +187,33 @@ pub fn page_slice(cards: Vec<Card>, limit: usize, page: usize) -> Vec<Card> {
     cards.into_iter().skip((page.max(1) - 1) * limit).take(limit).collect()
 }
 
-/// Démarre le navigateur à l'avance pour que la première recherche soit rapide.
-pub fn warm() {
-    let _ = browser();
+/// Ferme le navigateur d'arrière-plan (à appeler avant de quitter : sinon il resterait en cours d'exécution).
+pub fn shutdown() {
+    if BROWSER.lock().unwrap_or_else(|e| e.into_inner()).take().is_some() {
+        log_info!("background browser closed");
+    }
+}
+
+fn touch() {
+    *LAST_USE.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+}
+
+/// Thread de fond qui libère le navigateur inutilisé. Une lecture en cours garde sa propre référence : elle n'est pas coupée.
+fn start_reaper() {
+    REAPER.call_once(|| {
+        let _ = std::thread::Builder::new().name("browser-reaper".into()).spawn(|| loop {
+            std::thread::sleep(Duration::from_secs(30));
+            let idle = LAST_USE.lock().unwrap_or_else(|e| e.into_inner()).map_or(false, |t| t.elapsed() > IDLE_CLOSE);
+            if idle && BROWSER.lock().unwrap_or_else(|e| e.into_inner()).take().is_some() {
+                log_info!("background browser closed after {} min without use", IDLE_CLOSE.as_secs() / 60);
+            }
+        });
+    });
 }
 
 fn browser() -> Result<Arc<Browser>> {
+    start_reaper();
+    touch();
     let mut guard = BROWSER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(b) = guard.as_ref() {
         if b.get_version().is_ok() {
@@ -203,7 +231,10 @@ fn browser() -> Result<Arc<Browser>> {
             *guard = Some(b.clone());
             *FAILED.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
-        Err(e) => *FAILED.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), format!("{e:#}"))),
+        Err(e) => {
+            log_warn!("background browser could not start: {e:#}");
+            *FAILED.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), format!("{e:#}")));
+        }
     }
     result
 }
@@ -211,6 +242,8 @@ fn browser() -> Result<Arc<Browser>> {
 fn launch() -> Result<Arc<Browser>> {
     let choice = CHOICE.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let found = resolve(choice.as_deref())?;
+    let started = Instant::now();
+    log_info!("starting the background browser: {}", found.as_ref().map(|f| f.path.as_str()).unwrap_or("(automatic detection by the library)"));
     let opts = LaunchOptions::default_builder()
         .path(found.map(|f| PathBuf::from(f.path)))
         .headless(true)
@@ -235,7 +268,7 @@ fn launch() -> Result<Arc<Browser>> {
         let _ = tx.send(Browser::new(opts));
     });
     match rx.recv_timeout(LAUNCH_TIMEOUT) {
-        Ok(r) => Ok(Arc::new(r.context(
+        Ok(r) => Ok(Arc::new(r.map(|b| { log_info!("background browser ready in {} ms", started.elapsed().as_millis()); b }).context(
             "No Chromium-based browser found or it could not start (Chrome, Edge, Brave, Vivaldi, Chromium): pick one in Settings / \
              Aucun navigateur basé sur Chromium trouvé ou lancement impossible : choisissez-en un dans les Paramètres",
         )?)),
@@ -270,10 +303,16 @@ fn cache_put(url: &str, cards: &[Card], exhausted: bool) {
 
 /// Charge `url`, fait défiler la page jusqu'à avoir `needed` cartes (ou plus rien de nouveau).
 pub async fn scrape_cards(url: String, id_re: &'static str, needed: usize) -> Result<Vec<Card>> {
-    let task = tokio::task::spawn_blocking(move || scrape_blocking(&url, id_re, needed));
-    // Garde-fou global : une lecture ne peut jamais bloquer la recherche plus de 75 s
-    match tokio::time::timeout(Duration::from_secs(75), task).await {
-        Ok(joined) => joined?,
+    // Au plus MAX_TABS lectures simultanées : plusieurs sites sont lus par le même navigateur, et ouvrir
+    // une dizaine d'onglets d'un coup le ralentirait pour tout le monde. Les autres attendent leur tour.
+    static TABS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MAX_TABS);
+    let job = async {
+        let _permit = TABS.acquire().await?;
+        tokio::task::spawn_blocking(move || scrape_blocking(&url, id_re, needed)).await?
+    };
+    // Garde-fou global : une lecture (attente comprise) ne peut jamais bloquer la recherche plus de 150 s
+    match tokio::time::timeout(Duration::from_secs(150), job).await {
+        Ok(r) => r,
         Err(_) => bail!("page reading timed out / lecture de la page trop longue"),
     }
 }
@@ -289,6 +328,7 @@ fn scrape_blocking(url: &str, id_re: &str, needed: usize) -> Result<Vec<Card>> {
     let js = JS.replace("__RE__", &serde_json::to_string(id_re)?);
     let result = poll(&tab, url, &js, needed);
     let _ = tab.close(true);
+    touch();
     let (cards, exhausted) = result?;
     cache_put(url, &cards, exhausted);
     Ok(cards)
