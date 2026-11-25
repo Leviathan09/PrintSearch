@@ -42,7 +42,7 @@ fn real_main() -> Result<()> {
         Cmd::Serve { open, no_tray, foreground } => app::run(open, !no_tray, foreground),
         cmd => {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-            let ctx = Ctx { cfg: Arc::new(Mutex::new(cfg)), in_app: false };
+            let ctx = Ctx { cfg: Arc::new(Mutex::new(cfg)), in_app: false, host_local: true };
             let result = rt.block_on(async {
                 let mut out = String::new();
                 let r = commands::execute(cmd, &ctx, &mut out).await;

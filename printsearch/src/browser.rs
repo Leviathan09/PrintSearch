@@ -120,13 +120,25 @@ fn resolve(choice: Option<&str>) -> Result<Option<Found>> {
                 return Ok(Some(f));
             }
             let p = Path::new(c);
-            if p.is_file() {
+            // Only something that looks like a path can be a custom executable: a bare name (for example a browser id whose
+            // detection fails later) must never resolve to a file of the current directory.
+            if looks_like_path(c) && p.is_file() {
                 let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Custom".into());
                 return Ok(Some(Found { id: "custom".into(), name, path: c.into() }));
             }
             bail!("Browser '{c}' not found")
         }
     }
+}
+
+fn looks_like_path(c: &str) -> bool {
+    c.contains('/') || c.contains('\\')
+}
+
+/// True for "", "auto" or the id of a browser found on this machine: a choice that is never a file path.
+pub fn is_known_choice(choice: &str) -> bool {
+    let c = choice.trim();
+    c.is_empty() || c == "auto" || detect().iter().any(|f| f.id == c)
 }
 
 /// Checks that a choice is usable (without applying it).
@@ -367,4 +379,28 @@ fn poll(tab: &Arc<Tab>, url: &str, js: &str, needed: usize) -> Result<(Vec<Card>
         bail!("no result read after {} s — {}", start.elapsed().as_secs(), diag);
     }
     Ok((cards, exhausted))
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::*;
+
+    #[test]
+    fn known_choices_are_never_paths() {
+        assert!(is_known_choice(""));
+        assert!(is_known_choice("auto"));
+        assert!(is_known_choice("  auto  "));
+        assert!(!is_known_choice("/tmp/fake"));
+        assert!(!is_known_choice("../browser"));
+        assert!(!is_known_choice(r"C:\Tools\browser.exe"));
+    }
+
+    #[test]
+    fn bare_names_are_not_paths() {
+        assert!(!looks_like_path("chromium"));
+        assert!(!looks_like_path("chrome.exe"));
+        assert!(looks_like_path("./chromium"));
+        assert!(looks_like_path("/usr/bin/chromium"));
+        assert!(looks_like_path(r"C:\x\chrome.exe"));
+    }
 }

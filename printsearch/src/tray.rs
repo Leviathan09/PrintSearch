@@ -48,7 +48,7 @@ fn open_ui() {
     if now.saturating_sub(LAST_OPEN_MS.swap(now, Ordering::SeqCst)) < 1000 {
         return;
     }
-    let _ = open::that(crate::app::URL);
+    let _ = open::that(crate::app::url());
 }
 
 /// Crée l'icône puis bloque jusqu'à `stop()`. Renvoie une erreur si l'icône ne peut pas être créée.

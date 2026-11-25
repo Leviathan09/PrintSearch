@@ -604,8 +604,18 @@ $('#openConsole').addEventListener('click', () => { location.hash = 'console'; }
 // ---------- Fermeture de l'application ----------
 function showClosed(){ $('#closed').hidden = false; }
 async function quitApp(){
-  try{ await post('/api/quit', {}); }catch(e){ /* le serveur peut se fermer avant de répondre */ }
-  showClosed();
+  // Closed only after the server acknowledged the shutdown; a refusal or a lost answer is never shown as "closed".
+  try{
+    const r = await post('/api/quit', {});
+    if(r && r.ok === true){ showClosed(); return; }
+    toast('PrintSearch did not confirm the shutdown');
+  }catch(e){
+    if(e instanceof TypeError){      // no answer at all: look whether the server is still there
+      await new Promise(res => setTimeout(res, 1500));
+      try{ await api('/api/status'); toast('PrintSearch is still running'); }
+      catch(_){ toast('No answer from PrintSearch: it may have closed'); }
+    } else toast(e.message);
+  }
 }
 $('#quitApp').addEventListener('click', () => { if(confirm(tr('quitConfirm'))) quitApp(); });
 
@@ -640,9 +650,9 @@ async function termRun(line){
     const out = (r.output || '').replace(/\n+$/, '');
     if(out) termPrint(out, /^error:/.test(out) ? 'err' : '');
     if(cmd === 'help') termPrint(tr('consoleLocalHelp'), 'dim');
-    if(cmd === 'quit') showClosed();
+    if(cmd === 'quit' && /^PrintSearch is closing\./.test(out)) showClosed();
   }catch(e){
-    if(cmd === 'quit') showClosed(); else termPrint('error: ' + e.message, 'err');
+    termPrint('error: ' + e.message, 'err');
   }finally{
     term.busy = false; $('#termIn').disabled = false; $('#termIn').focus();
   }
