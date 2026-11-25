@@ -1,11 +1,11 @@
-//! Local web interface. Listens on 127.0.0.1 only by default: tokens never leave your machine.
-//! To reach it from another machine set `PRINTSEARCH_BIND` (address to listen on) and, if you use a
-//! host name or a wildcard bind (0.0.0.0), `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated names).
+//! Interface web locale. Écoute uniquement sur 127.0.0.1 : les jetons ne quittent pas votre machine.
+use crate::commands::{self, Ctx};
 use crate::config::Config;
+use crate::log::{self, log_info, log_warn};
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
@@ -13,9 +13,8 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use anyhow::Context;
 use serde_json::{json, Value};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 type Shared = Arc<Mutex<Config>>;
@@ -25,58 +24,17 @@ fn err(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::BAD_GATEWAY, format!("{e:#}"))
 }
 fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
-    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("unknown site: {k}")))
+    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("site inconnu : {k}")))
 }
 
-const PORT: u16 = 8787;
-const DEFAULT_BIND: &str = "127.0.0.1";
-
-/// Address to listen on: `PRINTSEARCH_BIND`, or 127.0.0.1.
-fn bind_addr() -> String {
-    std::env::var("PRINTSEARCH_BIND")
-        .ok()
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_BIND.into())
-}
-
-/// True for loopback addresses (127.0.0.0/8, ::1) and `localhost`: not reachable from the network.
-fn is_loopback(addr: &str) -> bool {
-    addr.parse::<std::net::IpAddr>().map_or(addr == "localhost", |ip| ip.is_loopback())
-}
-
-fn is_wildcard(addr: &str) -> bool {
-    addr == "0.0.0.0" || addr == "::"
-}
-
-/// `Host` / `Origin` values that are accepted: localhost, 127.0.0.1, the bind address (unless it is
-/// a wildcard) and every name in `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated), each with the port.
-fn allowed_hosts() -> &'static Vec<String> {
-    static HOSTS: OnceLock<Vec<String>> = OnceLock::new();
-    HOSTS.get_or_init(|| {
-        let mut hosts = vec!["localhost".to_string(), DEFAULT_BIND.to_string()];
-        let bind = bind_addr();
-        if !is_wildcard(&bind) {
-            hosts.push(bind);
-        }
-        if let Ok(extra) = std::env::var("PRINTSEARCH_ALLOWED_HOSTS") {
-            hosts.extend(extra.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()));
-        }
-        hosts
-            .into_iter()
-            .map(|h| if h.contains(':') && !h.starts_with('[') { format!("[{h}]:{PORT}") } else { format!("{h}:{PORT}") })
-            .collect()
-    })
-}
-
-/// Protection against third-party web pages (CSRF, "DNS rebinding"): only requests addressed
-/// to an allowed host and, if they carry an origin, coming from an allowed host, are accepted.
+/// Protection contre les pages web tierces (CSRF, « DNS rebinding ») : seules les requêtes adressées
+/// à localhost:8787 et, si elles ont une origine, venant de localhost:8787 sont acceptées.
 async fn local_only(req: Request, next: Next) -> Response {
-    let ok = allowed_hosts();
-    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| ok.iter().any(|a| a == h));
+    const OK: [&str; 2] = ["localhost:8787", "127.0.0.1:8787"];
+    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| OK.contains(&h));
     let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
         None => true,
-        Some(o) => o.strip_prefix("http://").map_or(false, |h| ok.iter().any(|a| a == h)),
+        Some(o) => o.strip_prefix("http://").map_or(false, |h| OK.contains(&h)),
     };
     if host_ok && origin_ok {
         next.run(req).await
@@ -85,8 +43,8 @@ async fn local_only(req: Request, next: Next) -> Response {
     }
 }
 
-pub async fn run(open_browser: bool) -> anyhow::Result<()> {
-    let cfg = Config::load()?;
+pub async fn run(listener: std::net::TcpListener, open_browser: bool) -> anyhow::Result<()> {
+    let cfg = Config::load();
     crate::browser::set_choice(cfg.browser.clone());
     let state: Shared = Arc::new(Mutex::new(cfg));
     let app = Router::new()
@@ -97,28 +55,27 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/browser", get(browser_info).post(browser_set))
+        .route("/api/update", get(update_info))
         .route("/api/like", post(like))
         .route("/api/collect", post(collect))
+        .route("/api/command", post(command))
+        .route("/api/logs", get(logs_text))
+        .route("/api/logs/export", get(logs_export))
+        .route("/api/quit", post(quit))
+        .route("/api/lang", post(set_lang))
         .route("/auth/thingiverse", get(auth_thingiverse))
         .route("/callback", get(callback))
+        .layer(DefaultBodyLimit::max(64 * 1024)) // aucune requête de l'interface n'a besoin de plus
         .layer(middleware::from_fn(local_only))
         .with_state(state);
-    let bind = bind_addr();
-    let listener = tokio::net::TcpListener::bind((bind.as_str(), PORT))
-        .await
-        .with_context(|| format!("cannot listen on {bind}:{PORT} (is the address valid and assigned to this machine, and is the port free?)"))?;
-    tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
-    let bracketed = if bind.contains(':') { format!("[{bind}]") } else { bind.clone() }; // IPv6 literal
-    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) { "localhost".to_string() } else { bracketed.clone() };
-    let url = format!("http://{shown}:{PORT}");
-    println!("Interface available at {url} (close this window or press Ctrl+C to stop)");
-    if !is_loopback(&bind) {
-        eprintln!("Warning: listening on {bracketed}:{PORT}. There is no authentication: anyone who can reach this address can use the interface and change the saved tokens.");
-    }
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    log_info!("web interface ready on {}", crate::app::URL);
+    println!("Web interface: {} (Ctrl+C to stop)", crate::app::URL);
     if open_browser {
-        let _ = open::that(&url);
+        let _ = open::that(crate::app::URL);
     }
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app).with_graceful_shutdown(crate::app::wait_quit()).await?;
     Ok(())
 }
 
@@ -159,6 +116,7 @@ async fn status(State(cfg): State<Shared>) -> Json<Value> {
     let mut m = m;
     let oauth = std::env::var("THINGIVERSE_CLIENT_ID").is_ok() && std::env::var("THINGIVERSE_CLIENT_SECRET").is_ok();
     m.insert("thingiverse_oauth".into(), json!(oauth));
+    m.insert("version".into(), json!(crate::update::current()));
     Json(Value::Object(m))
 }
 
@@ -170,10 +128,11 @@ struct LoginBody {
 
 async fn login(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResult {
     let site = site_of(&b.site)?;
-    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "empty token".into()))?;
+    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "jeton vide".into()))?;
     let mut c = cfg.lock().await;
     c.tokens.insert(site.key().into(), token.trim().to_string());
     c.save().map_err(err)?;
+    log_info!("token saved for {}", site.key());
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -182,6 +141,7 @@ async fn logout(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResul
     let mut c = cfg.lock().await;
     c.tokens.remove(site.key());
     c.save().map_err(err)?;
+    log_info!("token removed for {}", site.key());
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -193,26 +153,61 @@ struct ActionBody {
 }
 
 async fn token_of(cfg: &Shared, site: Site) -> Result<String, (StatusCode, String)> {
-    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "not connected to this site".into()))
+    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "non connecté à ce site".into()))
+}
+
+/// Identifiants envoyés tels quels dans une URL d'API : lettres, chiffres, « - » et « _ » seulement.
+fn valid_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
+    if !site.can_like() {
+        return Err((StatusCode::BAD_REQUEST, format!("Like is not available for {}", site.key())));
+    }
+    if !valid_id(&b.id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid model id".into()));
+    }
     let t = token_of(&cfg, site).await?;
-    provider(site).like(&b.id, &t).await.map_err(err)?;
+    match provider(site).like(&b.id, &t).await {
+        Ok(()) => log_info!("liked {} {}", site.key(), b.id),
+        Err(e) => {
+            log_warn!("like failed on {} {}: {e:#}", site.key(), b.id);
+            return Err(err(e));
+        }
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
 async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
+    if !site.can_collect() {
+        return Err((StatusCode::BAD_REQUEST, format!("Collections are not available for {}", site.key())));
+    }
     let t = token_of(&cfg, site).await?;
-    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "missing collection".into()))?;
-    provider(site).add_to_collection(&col, &b.id, &t).await.map_err(err)?;
+    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "collection manquante".into()))?;
+    if !valid_id(&col) || !valid_id(&b.id) {
+        return Err((StatusCode::BAD_REQUEST, "invalid id".into()));
+    }
+    match provider(site).add_to_collection(&col, &b.id, &t).await {
+        Ok(()) => log_info!("added {} {} to collection {col}", site.key(), b.id),
+        Err(e) => {
+            log_warn!("add to collection failed on {} {}: {e:#}", site.key(), b.id);
+            return Err(err(e));
+        }
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
+/// Instant où une connexion OAuth a été lancée depuis l'interface : une page tierce ne peut pas
+/// glisser son propre code d'autorisation dans /callback sans que l'utilisateur ait cliqué « Se connecter ».
+static OAUTH_PENDING: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
 async fn auth_thingiverse() -> Result<Redirect, (StatusCode, String)> {
-    Ok(Redirect::to(&thingiverse::authorize_url().map_err(err)?))
+    let url = thingiverse::authorize_url().map_err(err)?;
+    *OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    Ok(Redirect::to(&url))
 }
 
 #[derive(Deserialize)]
@@ -221,19 +216,31 @@ struct CallbackParams {
 }
 
 async fn callback(State(cfg): State<Shared>, Query(p): Query<CallbackParams>) -> Result<Redirect, (StatusCode, String)> {
-    let token = thingiverse::exchange_code(&p.code).await.map_err(err)?;
+    let pending = OAUTH_PENDING.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if !pending.map_or(false, |t| t.elapsed() < std::time::Duration::from_secs(600)) {
+        log_warn!("OAuth callback refused: no login in progress");
+        return Err((StatusCode::FORBIDDEN, "no Thingiverse login in progress".into()));
+    }
+    let token = thingiverse::exchange_code(&p.code).await.map_err(|e| {
+        log_warn!("Thingiverse OAuth failed: {e:#}");
+        err(e)
+    })?;
+    log_info!("Thingiverse connected through OAuth");
     let mut c = cfg.lock().await;
     c.tokens.insert("thingiverse".into(), token);
     c.save().map_err(err)?;
     Ok(Redirect::to("/#parametres"))
 }
 
-/// Site icons, embedded in the binary (replaceable: see web/icons/).
+/// Icônes des sites, intégrées au binaire (remplaçables : voir web/icons/).
 async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'static str); 1], &'static str), StatusCode> {
     let svg = match name.as_str() {
         "thingiverse.svg" => include_str!("../web/icons/thingiverse.svg"),
         "printables.svg" => include_str!("../web/icons/printables.svg"),
         "makerworld.svg" => include_str!("../web/icons/makerworld.svg"),
+        "thangs.svg" => include_str!("../web/icons/thangs.svg"),
+        "cults3d.svg" => include_str!("../web/icons/cults3d.svg"),
+        "myminifactory.svg" => include_str!("../web/icons/myminifactory.svg"),
         _ => return Err(StatusCode::NOT_FOUND),
     };
     Ok(([(header::CONTENT_TYPE, "image/svg+xml")], svg))
@@ -244,7 +251,6 @@ fn browser_json(choice: Option<String>) -> Value {
         "choice": choice.clone().unwrap_or_else(|| "auto".into()),
         "detected": crate::browser::detect(),
         "effective": crate::browser::effective(choice.as_deref()),
-        "custom_allowed": is_loopback(&bind_addr()),
     })
 }
 
@@ -260,14 +266,6 @@ struct BrowserBody {
 
 async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> ApiResult {
     let choice = b.choice.trim().to_string();
-    // A custom path would let anyone who can reach a network listener pick a program to launch.
-    let known = choice.is_empty() || choice == "auto" || crate::browser::detect().iter().any(|f| f.id == choice);
-    if !is_loopback(&bind_addr()) && !known {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "custom browser paths are disabled while listening on a non-loopback address (PRINTSEARCH_BIND); pick a detected browser, or run `printsearch browser <path>` on the server".into(),
-        ));
-    }
     crate::browser::validate_choice(&choice).map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
     let stored = if choice.is_empty() || choice == "auto" { None } else { Some(choice) };
     {
@@ -275,7 +273,79 @@ async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> A
         c.browser = stored.clone();
         c.save().map_err(err)?;
     }
+    log_info!("search browser set to {}", stored.as_deref().unwrap_or("auto"));
     crate::browser::set_choice(stored.clone());
-    tokio::task::spawn_blocking(crate::browser::warm);
     Ok(Json(browser_json(stored)))
+}
+
+#[derive(Deserialize)]
+struct UpdateParams {
+    force: Option<u8>,
+}
+
+async fn update_info(Query(p): Query<UpdateParams>) -> ApiResult {
+    let info = crate::update::check(p.force == Some(1)).await.map_err(err)?;
+    Ok(Json(json!(info)))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Console, journal, arrêt, langue
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct CommandBody {
+    line: String,
+}
+
+async fn command(State(cfg): State<Shared>, Json(b): Json<CommandBody>) -> ApiResult {
+    if b.line.len() > 2000 {
+        return Err((StatusCode::BAD_REQUEST, "command too long".into()));
+    }
+    let output = commands::run_line(&Ctx { cfg, in_app: true }, &b.line).await;
+    Ok(Json(json!({ "output": output })))
+}
+
+#[derive(Deserialize)]
+struct LogParams {
+    n: Option<usize>,
+    level: Option<log::Level>,
+}
+
+async fn logs_text(Query(p): Query<LogParams>) -> impl IntoResponse {
+    let lines = log::tail(p.n.unwrap_or(200).min(5000), p.level.unwrap_or(log::Level::Info));
+    ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], lines.join("\n"))
+}
+
+async fn logs_export(State(cfg): State<Shared>) -> impl IntoResponse {
+    let body = log::export_text(&commands::system_info(&Ctx { cfg, in_app: true }).await);
+    (
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"printsearch-logs-{}.txt\"", log::stamp_for_filename())),
+        ],
+        body,
+    )
+}
+
+async fn quit() -> Json<Value> {
+    crate::app::request_quit();
+    Json(json!({ "ok": true }))
+}
+
+#[derive(Deserialize)]
+struct LangBody {
+    lang: String,
+}
+
+/// Mémorise la langue de l'interface (pour le menu de l'icône de la barre d'état au prochain démarrage).
+async fn set_lang(State(cfg): State<Shared>, Json(b): Json<LangBody>) -> ApiResult {
+    if !matches!(b.lang.as_str(), "en" | "de" | "fr") {
+        return Err((StatusCode::BAD_REQUEST, "unsupported language".into()));
+    }
+    let mut c = cfg.lock().await;
+    if c.lang.as_deref() != Some(b.lang.as_str()) {
+        c.lang = Some(b.lang);
+        c.save().map_err(err)?;
+    }
+    Ok(Json(json!({ "ok": true })))
 }

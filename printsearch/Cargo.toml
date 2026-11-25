@@ -1,16 +1,16 @@
 [package]
 name = "printsearch"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Print-lab"]
 edition = "2021"
-description = "Unified search for 3D models (Thingiverse, Printables, MakerWorld)"
+description = "Unified search for 3D models (Thingiverse, Printables, MakerWorld, Thangs, Cults, MyMiniFactory)"
 license = "GPL-3.0-only"
 repository = "https://github.com/Print-lab/PrintSearch"
 readme = "README.md"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
@@ -23,6 +23,21 @@ axum = "0.7"
 headless_chrome = "1"
 open = "5"
 
+[features]
+default = ["tray"]
+# Icône dans la barre d'état (Windows) / zone de notification (Linux) et lancement sans fenêtre de terminal.
+# Sans elle (`--no-default-features`), l'application reste un programme de terminal classique.
+tray = ["dep:tray-icon"]
+
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+tray-icon = { version = "0.26", default-features = false, features = ["ksni"], optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+
 [build-dependencies]
 winresource = "0.1"
 
@@ -33,6 +48,7 @@ section = "utils"
 priority = "optional"
 depends = "$auto"
 recommends = "chromium | chromium-browser | google-chrome-stable | microsoft-edge-stable | brave-browser"
+suggests = "gnome-shell-extension-appindicator"
 assets = [
     ["target/release/printsearch",    "usr/bin/",                              "755"],
     ["packaging/printsearch.desktop", "usr/share/applications/",               "644"],
