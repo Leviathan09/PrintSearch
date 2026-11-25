@@ -1,6 +1,6 @@
-//! Commandes de l'application. Les mêmes commandes servent :
-//!  - dans un terminal : `printsearch search "vase" --price free`
-//!  - dans la console intégrée à l'interface web (page « Console »).
+//! Application commands. The same commands are used:
+//!  - in a terminal: `printsearch search "vase" --price free`
+//!  - in the console built into the web interface ("Console" page).
 use crate::config::Config;
 use crate::log::{self, log_info, Level};
 use crate::providers::{provider, Site};
@@ -103,11 +103,11 @@ pub enum LogsAction {
     Clear,
 }
 
-/// Contexte d'exécution : la configuration partagée et le lieu d'exécution.
+/// Execution context: the shared configuration and where the command runs.
 #[derive(Clone)]
 pub struct Ctx {
     pub cfg: Arc<Mutex<Config>>,
-    /// true = exécuté dans l'application en cours (console intégrée) ; false = terminal
+    /// true = run inside the running application (built-in console); false = terminal
     pub in_app: bool,
     /// true = the caller is on the PrintSearch computer itself (terminal, or a loopback / own-address connection);
     /// false = a client reaching a network listener. Decided from the TCP peer address, never from a header.
@@ -307,7 +307,7 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
 }
 
 
-/// En-tête de diagnostic (version, système, navigateur, sites connectés…). Ne contient aucun jeton.
+/// Diagnostic header (version, system, browser, connected sites…). Contains no token.
 pub async fn system_info(ctx: &Ctx) -> String {
     let c = ctx.cfg.lock().await.clone();
     let connected: Vec<&str> = Site::ALL.iter().filter(|s| c.token_for(**s).is_some()).map(|s| s.key()).collect();
@@ -329,11 +329,11 @@ pub async fn system_info(ctx: &Ctx) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Console intégrée : une ligne de texte -> une commande
+// Built-in console: one line of text -> one command
 // ---------------------------------------------------------------------------------------------
 
-/// Découpe une ligne comme un shell simple : espaces, "guillemets doubles" et 'simples'.
-/// Dans "…", seuls \" et \\ sont des échappements (un chemin Windows comme "C:\Users\moi" reste intact).
+/// Splits a line like a simple shell: spaces, "double quotes" and 'single quotes'.
+/// Inside "…", only \" and \\ are escapes (a Windows path such as "C:\Users\me" stays intact).
 pub fn split_args(s: &str) -> Result<Vec<String>, String> {
     let (mut out, mut cur, mut in_tok, mut quote) = (Vec::new(), String::new(), false, None::<char>);
     let mut chars = s.chars().peekable();
@@ -375,7 +375,7 @@ pub fn split_args(s: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// Masque la valeur de --token pour que le jeton n'apparaisse jamais dans le journal.
+/// Hides the value of --token so the token never appears in the log.
 fn redact(args: &[String]) -> String {
     let mut shown = Vec::with_capacity(args.len());
     let mut mask_next = false;
@@ -395,7 +395,7 @@ fn redact(args: &[String]) -> String {
     shown.join(" ")
 }
 
-/// Exécute une ligne de la console et renvoie le texte à afficher.
+/// Runs a console line and returns the text to display.
 pub async fn run_line(ctx: &Ctx, line: &str) -> String {
     let line = line.trim();
     if line.is_empty() {
@@ -408,7 +408,7 @@ pub async fn run_line(ctx: &Ctx, line: &str) -> String {
     log_info!("console: {}", redact(&args));
     let cli = match Cli::try_parse_from(std::iter::once("printsearch".to_string()).chain(args)) {
         Ok(c) => c,
-        Err(e) => return e.render().to_string(), // aide, version ou erreur d'usage
+        Err(e) => return e.render().to_string(), // help, version or usage error
     };
     let Some(cmd) = cli.cmd else {
         return "Type `help` to list the commands.\n".into();

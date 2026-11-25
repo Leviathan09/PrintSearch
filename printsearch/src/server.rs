@@ -28,7 +28,7 @@ fn err(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::BAD_GATEWAY, format!("{e:#}"))
 }
 fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
-    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("site inconnu : {k}")))
+    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("unknown site: {k}")))
 }
 
 pub(crate) const PORT: u16 = 8787;
@@ -193,7 +193,7 @@ pub async fn run(listener: std::net::TcpListener, open_browser: bool) -> anyhow:
         .route("/api/lang", post(set_lang))
         .route("/auth/thingiverse", get(auth_thingiverse))
         .route("/callback", get(callback))
-        .layer(DefaultBodyLimit::max(64 * 1024)) // aucune requête de l'interface n'a besoin de plus
+        .layer(DefaultBodyLimit::max(64 * 1024)) // no request of the interface needs more
         .layer(middleware::from_fn(local_only))
         .with_state(state);
     listener.set_nonblocking(true)?;
@@ -265,7 +265,7 @@ struct LoginBody {
 
 async fn login(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResult {
     let site = site_of(&b.site)?;
-    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "jeton vide".into()))?;
+    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "empty token".into()))?;
     let mut c = cfg.lock().await;
     c.tokens.insert(site.key().into(), token.trim().to_string());
     c.save().map_err(err)?;
@@ -290,7 +290,7 @@ struct ActionBody {
 }
 
 async fn token_of(cfg: &Shared, site: Site) -> Result<String, (StatusCode, String)> {
-    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "non connecté à ce site".into()))
+    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "not connected to this site".into()))
 }
 
 async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
@@ -318,7 +318,7 @@ async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiRes
         return Err((StatusCode::BAD_REQUEST, format!("Collections are not available for {}", site.key())));
     }
     let t = token_of(&cfg, site).await?;
-    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "collection manquante".into()))?;
+    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "missing collection".into()))?;
     if !valid_id(&col) || !valid_id(&b.id) {
         return Err((StatusCode::BAD_REQUEST, "invalid id".into()));
     }
@@ -332,8 +332,8 @@ async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiRes
     Ok(Json(json!({ "ok": true })))
 }
 
-/// Instant où une connexion OAuth a été lancée depuis l'interface : une page tierce ne peut pas
-/// glisser son propre code d'autorisation dans /callback sans que l'utilisateur ait cliqué « Se connecter ».
+/// Moment an OAuth login was started from the interface: a third-party page cannot
+/// slip its own authorization code into /callback unless the user clicked "Connect".
 static OAUTH_PENDING: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
 /// The OAuth redirect is fixed to localhost:8787: the sign-in only works in a browser on this computer.
@@ -375,7 +375,7 @@ async fn callback(State(cfg): State<Shared>, ConnectInfo(peer): ConnectInfo<Peer
     Ok(Redirect::to("/#parametres"))
 }
 
-/// Icônes des sites, intégrées au binaire (remplaçables : voir web/icons/).
+/// Site icons, embedded in the binary (replaceable: see web/icons/).
 async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'static str); 1], &'static str), StatusCode> {
     let svg = match name.as_str() {
         "thingiverse.svg" => include_str!("../web/icons/thingiverse.svg"),
@@ -438,7 +438,7 @@ async fn update_info(Query(p): Query<UpdateParams>) -> ApiResult {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Console, journal, arrêt, langue
+// Console, log, shutdown, language
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -490,7 +490,7 @@ struct LangBody {
     lang: String,
 }
 
-/// Mémorise la langue de l'interface (pour le menu de l'icône de la barre d'état au prochain démarrage).
+/// Remembers the interface language (for the tray icon menu at the next start).
 async fn set_lang(State(cfg): State<Shared>, Json(b): Json<LangBody>) -> ApiResult {
     if !matches!(b.lang.as_str(), "en" | "de" | "fr") {
         return Err((StatusCode::BAD_REQUEST, "unsupported language".into()));

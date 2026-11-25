@@ -25,8 +25,8 @@ open = "5"
 
 [features]
 default = ["tray"]
-# Icône dans la barre d'état (Windows) / zone de notification (Linux) et lancement sans fenêtre de terminal.
-# Sans elle (`--no-default-features`), l'application reste un programme de terminal classique.
+# Tray icon (Windows) / notification area (Linux) and start without a terminal window.
+# Without it (`--no-default-features`), the application stays an ordinary terminal program.
 tray = ["dep:tray-icon"]
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]

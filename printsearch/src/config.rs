@@ -11,7 +11,7 @@ pub struct Config {
     pub tokens: BTreeMap<String, String>,
     #[serde(default)]
     pub browser: Option<String>,
-    /// Langue de l'interface ("en" ou "fr"), utilisée pour le menu de l'icône de la barre d'état
+    /// Interface language ("en", "de" or "fr"), used for the tray icon menu
     #[serde(default)]
     pub lang: Option<String>,
 }
@@ -31,8 +31,8 @@ impl Config {
         })
     }
 
-    /// Charge la configuration. Un fichier illisible ou corrompu est mis de côté (`config.json.bad`)
-    /// et l'application démarre avec une configuration vide, au lieu de refuser de démarrer.
+    /// Loads the configuration. An unreadable or corrupt file is set aside (`config.json.bad`)
+    /// and the application starts with an empty configuration instead of refusing to start.
     pub fn load() -> Self {
         let Ok(p) = path() else { return Self::default() };
         if !p.exists() {

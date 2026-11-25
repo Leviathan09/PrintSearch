@@ -34,7 +34,7 @@ impl Site {
         }
     }
 
-    /// Actions réellement disponibles (les autres renverraient une erreur après un appel inutile).
+    /// Actions that really exist (the others would return an error after a useless call).
     pub fn can_like(&self) -> bool {
         matches!(self, Site::Thingiverse | Site::Printables)
     }
@@ -42,7 +42,7 @@ impl Site {
         matches!(self, Site::Thingiverse)
     }
 
-    /// Sites auxquels on peut se connecter (jeton) pour agir sur son compte. Les autres sont en recherche seule.
+    /// Sites you can connect to (token) to act on your account. The others are search-only.
     pub fn supports_account(&self) -> bool {
         matches!(self, Site::Thingiverse | Site::Printables | Site::Makerworld)
     }

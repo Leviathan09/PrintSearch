@@ -50,7 +50,7 @@ fn keep(m: &Model, f: &Filters) -> bool {
 }
 
 pub async fn search_all(cfg: &Config, sites: &[Site], query: &str, limit: usize, page: usize, f: &Filters) -> Outcome {
-    let shown: String = query.chars().take(120).collect(); // pour le journal : jamais de ligne démesurée
+    let shown: String = query.chars().take(120).collect(); // for the log: never an oversized line
     let tasks = sites.iter().map(|&s| {
         let tok = cfg.token_for(s);
         let q = query.to_string();

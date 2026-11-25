@@ -281,8 +281,8 @@ body.view-console .consoleview{display:block;animation:rise .5s var(--ease)}
 <div id="toast"></div>
 <script>
 const SITES = {thingiverse:'Thingiverse', printables:'Printables', makerworld:'MakerWorld', thangs:'Thangs', cults3d:'Cults', myminifactory:'MyMiniFactory'};
-const CONNECTABLE = ['thingiverse','printables','makerworld'];             // sites où l'on peut enregistrer un jeton
-const CAPS = {thingiverse:{like:true, collect:true}, printables:{like:true}};  // actions réellement disponibles par site
+const CONNECTABLE = ['thingiverse','printables','makerworld'];             // sites where a token can be saved
+const CAPS = {thingiverse:{like:true, collect:true}, printables:{like:true}};  // actions that really exist per site
 const $ = s => document.querySelector(s);
 let connected = {}, oauthOk = false;
 let page = 1, lastQ = '', total = 0, seq = 0, ctrl = null, timer = null, toastTimer = null;
@@ -481,7 +481,7 @@ function applyLang(){
   renderUpdateInfo(); renderBanner();
 }
 
-// ---------- Mises à jour ----------
+// ---------- Updates ----------
 function renderUpdateInfo(){
   const out = $('#updateInfo'); out.replaceChildren();
   const u = lastUpdate; if(!u) return;
@@ -489,7 +489,7 @@ function renderUpdateInfo(){
   if(u.update_available){
     out.append(el('strong',{}, tr('updateAvailable',{v:u.latest,c:u.current})), ' ',
       el('a',{href:u.url,target:'_blank',rel:'noopener noreferrer'}, tr('updateView')));
-    if(u.notes) out.append(el('pre',{class:'notes'}, u.notes));   // texte brut : jamais interprété comme du HTML
+    if(u.notes) out.append(el('pre',{class:'notes'}, u.notes));   // plain text: never interpreted as HTML
   } else out.append(tr('updateUpToDate',{v:u.current}));
 }
 function renderBanner(){
@@ -507,7 +507,7 @@ async function checkUpdate(manual){
     if(lastUpdate.update_available && store.get('dismissedUpdate','') !== lastUpdate.latest) bannerShown = true;
     if(manual) renderUpdateInfo();
     renderBanner();
-  }catch(e){ if(manual) out.textContent = tr('updateError',{e:e.message}); }   // au démarrage : silencieux (hors ligne, etc.)
+  }catch(e){ if(manual) out.textContent = tr('updateError',{e:e.message}); }   // at startup: silent (offline, etc.)
   finally{ if(manual) btn.disabled = false; }
 }
 
@@ -617,13 +617,13 @@ function applyView(){
 window.addEventListener('hashchange', applyView);
 $('#gear').addEventListener('click', () => { location.hash = 'parametres'; });
 document.querySelectorAll('.backbtn').forEach(b => b.addEventListener('click', () => {
-  if(b.dataset.back){ location.hash = b.dataset.back; return; }          // retour d'un niveau (console -> avancés -> paramètres)
-  history.pushState('', document.title, location.pathname + location.search); applyView();   // retour à la recherche
+  if(b.dataset.back){ location.hash = b.dataset.back; return; }          // back one level (console -> advanced -> settings)
+  history.pushState('', document.title, location.pathname + location.search); applyView();   // back to the search
 }));
 $('#advancedBtn').addEventListener('click', () => { location.hash = 'parametres-avances'; });
 $('#openConsole').addEventListener('click', () => { location.hash = 'console'; });
 
-// ---------- Fermeture de l'application ----------
+// ---------- Closing the application ----------
 function showClosed(){ $('#closed').hidden = false; }
 async function quitApp(){
   // Closed only after the server acknowledged the shutdown; a refusal or a lost answer is never shown as "closed".
@@ -641,11 +641,11 @@ async function quitApp(){
 }
 $('#quitApp').addEventListener('click', () => { if(confirm(tr('quitConfirm'))) quitApp(); });
 
-// ---------- Console : les mêmes commandes que le terminal (« printsearch <commande> ») ----------
+// ---------- Console: the same commands as the terminal ("printsearch <command>") ----------
 const term = { hist: [], idx: 0, busy: false, started: false };
 const TERM_CMDS = ['help','search','login','update','browser','like','collect','logs','status','quit','clear','lang','serve'];
 function termPrint(text, cls){
-  const d = el('div', {class: 'tline ' + (cls || '')}); d.textContent = text;   // texte brut : jamais du HTML
+  const d = el('div', {class: 'tline ' + (cls || '')}); d.textContent = text;   // plain text: never HTML
   const box = $('#termOut'); box.append(d); box.scrollTop = box.scrollHeight;
 }
 function openConsole(){
@@ -657,8 +657,8 @@ function openConsole(){
 }
 async function termRun(line){
   line = line.trim(); if(!line) return;
-  termPrint('› ' + line.replace(/(--token[ =])\S+/g, '$1***'), 'cmd');     // un jeton tapé ne reste jamais affiché
-  if(!/--token/.test(line)) term.hist.push(line);          // une commande contenant un jeton n'entre pas dans l'historique
+  termPrint('› ' + line.replace(/(--token[ =])\S+/g, '$1***'), 'cmd');     // a typed token is never left on screen
+  if(!/--token/.test(line)) term.hist.push(line);          // a command containing a token does not enter the history
   term.idx = term.hist.length;
   const [cmd, ...rest] = line.split(/\s+/);
   if(cmd === 'clear' || cmd === 'cls'){ $('#termOut').replaceChildren(); return; }
@@ -768,7 +768,7 @@ function renderGrid(pending = 0){
   if(pending > 0) showSkeleton(nodes.length ? 3 : 8);
 }
 
-// Plusieurs sites lus par le même navigateur échouent souvent pour la même raison : un seul message pour tous
+// Several sites read by the same browser often fail for the same reason: one message for all
 let errGroups = new Map();
 function renderErrors(){
   $('#errors').replaceChildren(...[...errGroups].map(([msg, list]) => el('div', {class:'msg err'}, `${list.join(', ')} : ${msg}`)));
@@ -886,11 +886,11 @@ $('#browserSave').addEventListener('click', async () => {
 });
 
 applyLang();
-post('/api/lang', {lang}).catch(() => {});   // l'application connaît ainsi la langue dès le premier lancement
+post('/api/lang', {lang}).catch(() => {});   // so the application knows the language from the first start
 buildSiteFilters();
 applyView();
 renderHist();
-if(updateAuto) setTimeout(() => checkUpdate(false), 2500);   // discret : après le démarrage
+if(updateAuto) setTimeout(() => checkUpdate(false), 2500);   // discreet: after startup
 </script>
 </body>
 </html>

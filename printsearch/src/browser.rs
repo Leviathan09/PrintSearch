@@ -54,8 +54,8 @@ static CACHE: Mutex<Option<CacheMap>> = Mutex::new(None);
 static CHOICE: Mutex<Option<String>> = Mutex::new(None);
 /// Last launch failure (to avoid retrying in a loop for a few seconds).
 static FAILED: Mutex<Option<(Instant, String)>> = Mutex::new(None);
-/// Dernier usage du navigateur d'arrière-plan : au bout de 10 min d'inactivité il est fermé (il se relance tout seul
-/// à la prochaine recherche). Une application qui reste des jours dans la barre d'état ne doit pas garder un Chrome ouvert.
+/// Last use of the background browser: after 10 min of inactivity it is closed (it restarts by itself
+/// on the next search). An application that stays for days in the tray must not keep a Chrome open.
 static LAST_USE: Mutex<Option<Instant>> = Mutex::new(None);
 static REAPER: std::sync::Once = std::sync::Once::new();
 const IDLE_CLOSE: Duration = Duration::from_secs(600);
@@ -281,8 +281,7 @@ fn launch() -> Result<Arc<Browser>> {
     });
     match rx.recv_timeout(LAUNCH_TIMEOUT) {
         Ok(r) => Ok(Arc::new(r.map(|b| { log_info!("background browser ready in {} ms", started.elapsed().as_millis()); b }).context(
-            "No Chromium-based browser found or it could not start (Chrome, Edge, Brave, Vivaldi, Chromium): pick one in Settings / \
-             Aucun navigateur basé sur Chromium trouvé ou lancement impossible : choisissez-en un dans les Paramètres",
+            "No Chromium-based browser found or it could not start (Chrome, Edge, Brave, Vivaldi, Chromium): pick one in Settings",
         )?)),
         Err(_) => bail!(
             "The browser did not start within {} s. Is it really a Chromium-based browser? Pick another one in Settings",
