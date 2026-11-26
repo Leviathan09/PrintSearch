@@ -171,7 +171,9 @@ pub fn run(open: bool, tray: bool, foreground: bool) -> Result<()> {
                 break;
             }
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                in_use.get_or_insert(e);
+                // a busy candidate means an instance of this user may already run: never start a second one on the next address
+                in_use = Some(e);
+                break;
             }
             Err(e) => last_error = Some(e),
         }

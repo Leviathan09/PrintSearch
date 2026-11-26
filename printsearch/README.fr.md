@@ -64,7 +64,7 @@ Sur une machine sans écran, lancez PrintSearch comme service. L'icône de la ba
 ```bash
 sudo apt install git curl build-essential chromium      # Ubuntu : chromium-browser
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/Print-lab/PrintSearch.git && cd PrintSearch
+git clone https://github.com/Print-lab/PrintSearch.git && cd PrintSearch/printsearch
 cargo build --release
 ```
 
@@ -75,8 +75,11 @@ Une unité systemd utilisateur (`~/.config/systemd/user/printsearch.service`) :
 Description=PrintSearch
 
 [Service]
-ExecStart=%h/PrintSearch/target/release/printsearch serve --no-tray
+ExecStart=%h/PrintSearch/printsearch/target/release/printsearch serve --no-tray
 Restart=on-failure
+# only for network access, see below:
+#Environment=PRINTSEARCH_BIND=192.168.1.20
+#Environment=PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20
 
 [Install]
 WantedBy=default.target
@@ -175,11 +178,11 @@ Tout cela fonctionne aussi dans la console de l'application. Sous **Windows**, l
 
 ### Accéder depuis une autre machine (facultatif)
 
-Par défaut, PrintSearch n'écoute que sur `127.0.0.1`. Pour l'utiliser depuis un autre ordinateur (par exemple un serveur sans écran), définissez deux variables d'environnement **avant de le démarrer** :
+Par défaut, PrintSearch n'écoute que sur `127.0.0.1`. Pour l'utiliser depuis un autre ordinateur (par exemple un serveur sans écran), définissez deux variables d'environnement **avant de le démarrer** (dans l'unité systemd avec des lignes `Environment=`, dans un shell avec `export`) :
 
 ```bash
-PRINTSEARCH_BIND=192.168.1.20            # adresse d'écoute ; 0.0.0.0 ou :: = toutes les interfaces
-PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20   # noms/adresses que les navigateurs peuvent utiliser, séparés par des virgules
+export PRINTSEARCH_BIND=192.168.1.20            # adresse d'écoute ; 0.0.0.0 ou :: = toutes les interfaces
+export PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20   # noms/adresses que les navigateurs peuvent utiliser, séparés par des virgules
 ```
 
 - Écrivez les noms d'hôte en minuscules, sans port et sans `http://`. Seul `http` simple est pris en charge.
@@ -187,7 +190,7 @@ PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20   # noms/adresses que les navigateurs peu
 - La connexion est en **HTTP simple, sans authentification** : toute personne qui atteint le port peut chercher et utiliser vos comptes connectés. Ne l'utilisez que sur un réseau de confiance, ou derrière un pare-feu / VPN.
 - PrintSearch refuse ces actions aux clients qui ne sont pas sur l'ordinateur de PrintSearch lui-même : un chemin de navigateur personnalisé, `logs export` et `logs clear`, `quit`, et la connexion OAuth de Thingiverse. Pour récupérer le journal depuis une autre machine, utilisez le bouton **Télécharger les journaux** de l'interface.
 - Une requête est locale si elle vient de la boucle locale ou d'une adresse de la même machine. Cela inclut les autres utilisateurs de cet ordinateur, un tunnel SSH et un proxy inverse sur la même machine : ils sont aussi fiables que l'ordinateur lui-même.
-- La redirection OAuth de Thingiverse est fixée à `http://localhost:8787/callback`. Connectez-vous dans le navigateur du serveur, ou redirigez le port (`ssh -L 8787:<IP-du-serveur>:8787 <serveur>`). Ou utilisez plutôt un App Token Thingiverse, qui fonctionne de partout.
+- La redirection OAuth de Thingiverse est fixée à `http://localhost:8787/callback`. Avec une écoute sur une adresse du réseau local, rien n'écoute sur `localhost:8787` : redirigez le port (`ssh -L 8787:<IP-du-serveur>:8787 <serveur>`) et ouvrez `http://localhost:8787` via le tunnel. Ou utilisez plutôt un App Token Thingiverse, qui fonctionne de partout.
 
 ### Choisir le navigateur utilisé pour les recherches
 
